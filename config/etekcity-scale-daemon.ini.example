@@ -5,12 +5,15 @@
 # instead of scanning again.
 address =
 model =
+
 # Optional BLE adapter to use, e.g. hci0 (Linux only). Leave empty for the
 # system default adapter.
 adapter =
+
 # BLE scanning mode: active or passive (Linux only; other platforms always
 # scan actively).
 scanning_mode = active
+
 # Seconds to ignore advertisements after a disconnection. Only applies to
 # GATT-based scales (ESF-551, ESF-24, EFS-A591S).
 cooldown_seconds = 5
@@ -29,13 +32,16 @@ log_level = INFO
 #   simple - date/weight only, laid out in several side-by-side columns
 #            so a page isn't mostly empty
 layout = full
+
 # Columns to include in the "full" layout, yes or no.
 include_address = yes
 include_model = yes
 include_impedance = yes
+
 # Unit to render the Weight column in: kg, lb, or st. Stored measurements
 # are always in kilograms; this only affects report display.
 weight_unit = kg
+
 # Date/time format: us (MM/DD/YYYY, 12-hour) or world (DD/MM/YYYY, 24-hour)
 date_format = world
 
