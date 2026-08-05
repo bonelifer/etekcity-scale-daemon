@@ -49,6 +49,9 @@ weight_unit = kg
 # Date/time format: us (MM/DD/YYYY, 12-hour) or world (DD/MM/YYYY, 24-hour)
 date_format = world
 
+# PDF page size: letter or a4
+page_size = letter
+
 [patient]
 # Optional patient name/email printed below the title in PDF reports, e.g.
 # for handing a report to a doctor. Leave either blank to omit that line.

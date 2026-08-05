@@ -36,6 +36,7 @@ class ReportConfig:
     weight_unit: str  # "kg", "lb", or "st"
     date_format: str  # "us" or "world"
     layout: str  # "full" or "simple"
+    page_size: str  # "letter" or "a4"
 
 
 DEFAULT_REPORT_CONFIG = ReportConfig(
@@ -46,10 +47,12 @@ DEFAULT_REPORT_CONFIG = ReportConfig(
     weight_unit="kg",
     date_format="world",
     layout="full",
+    page_size="letter",
 )
 
 _WEIGHT_UNITS = ("kg", "lb", "st")
 _DATE_FORMATS = ("us", "world")
+_PAGE_SIZES = ("letter", "a4")
 _LAYOUTS = ("full", "simple")
 
 
@@ -174,6 +177,10 @@ def load_report_config(config_path: str) -> ReportConfig:
     if layout not in _LAYOUTS:
         raise ConfigError(f"report.layout must be one of {_LAYOUTS}, got {layout!r}")
 
+    page_size = report.get("page_size", DEFAULT_REPORT_CONFIG.page_size).strip().lower()
+    if page_size not in _PAGE_SIZES:
+        raise ConfigError(f"report.page_size must be one of {_PAGE_SIZES}, got {page_size!r}")
+
     return ReportConfig(
         include_address=_parse_bool(
             report.get("include_address", "yes"), "report.include_address"
@@ -190,6 +197,7 @@ def load_report_config(config_path: str) -> ReportConfig:
         weight_unit=weight_unit,
         date_format=date_format,
         layout=layout,
+        page_size=page_size,
     )
 
 

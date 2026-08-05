@@ -75,6 +75,7 @@ Leave `[scale] address` and `model` empty to auto-discover a scale on first run 
 | `report` | `include_heart_rate` | Show the Heart Rate column in the `full` layout: `yes` or `no`. Only EFS-A591S reports heart rate; defaults to `no`. |
 | `report` | `weight_unit` | Unit to render the Weight column in: `kg`, `lb`, or `st`. |
 | `report` | `date_format` | `us` (MM/DD/YYYY, 12-hour) or `world` (DD/MM/YYYY, 24-hour). |
+| `report` | `page_size` | PDF page size: `letter` or `a4`. |
 | `patient` | `name` | Patient name printed below the title in PDF reports. Leave blank to omit. |
 | `patient` | `email` | Patient email printed below the title in PDF reports. Leave blank to omit. |
 
