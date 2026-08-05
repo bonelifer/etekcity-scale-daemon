@@ -35,6 +35,28 @@ _WEIGHT_CONVERSIONS = {
     "st": (0.15747304441776975, "st"),
 }
 
+# Date/time strftime patterns for each date_format preset.
+_DATE_TIME_FORMATS = {
+    "us": "%m/%d/%Y %I:%M:%S %p",
+    "world": "%d/%m/%Y %H:%M:%S",
+}
+
+# Number of side-by-side Date/Weight column pairs in the "simple" layout.
+_SIMPLE_LAYOUT_COLUMN_PAIRS = 3
+
+
+def _format_datetime(recorded_at: datetime, date_format: str) -> str:
+    """Format a UTC timestamp in local time using the given date_format preset.
+
+    Args:
+        recorded_at: A timezone-aware UTC datetime.
+        date_format: "us" (MM/DD/YYYY, 12-hour) or "world" (DD/MM/YYYY, 24-hour).
+
+    Returns:
+        The formatted local date/time string.
+    """
+    return recorded_at.astimezone().strftime(_DATE_TIME_FORMATS[date_format])
+
 
 @dataclass
 class ReportRow:
@@ -136,34 +158,47 @@ def fetch_rows(
         connection.close()
 
 
-def build_pdf(
-    rows: list[ReportRow],
-    output_path: str,
-    report_config: ReportConfig = DEFAULT_REPORT_CONFIG,
-) -> None:
-    """Render measurement rows as a table in a PDF file.
+def _table_style(align_cols: list[int]) -> TableStyle:
+    """Build the shared header/grid/zebra-stripe style for a report table.
+
+    Args:
+        align_cols: Column indices to right-align (numeric columns).
+
+    Returns:
+        A TableStyle applying header styling, a grid, zebra-striped rows,
+        and right-alignment of the given columns.
+    """
+    style_commands = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2f5d8a")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        (
+            "ROWBACKGROUNDS",
+            (0, 1),
+            (-1, -1),
+            [colors.white, colors.HexColor("#f0f0f0")],
+        ),
+    ]
+    style_commands.extend(("ALIGN", (idx, 1), (idx, -1), "RIGHT") for idx in align_cols)
+    return TableStyle(style_commands)
+
+
+def _build_full_table(rows: list[ReportRow], report_config: ReportConfig) -> Table:
+    """Build the full-detail table: date/time plus whichever columns are enabled.
 
     Args:
         rows: Measurement rows to include, oldest first.
-        output_path: Filesystem path to write the PDF to.
-        report_config: Controls which columns are shown and which unit
-            weights are rendered in.
+        report_config: Controls which columns are shown, the weight unit,
+            and the date/time format.
+
+    Returns:
+        A styled reportlab Table.
     """
     weight_factor, weight_label = _WEIGHT_CONVERSIONS[report_config.weight_unit]
-
-    styles = getSampleStyleSheet()
-    doc = SimpleDocTemplate(output_path, pagesize=letter)
-    elements = [
-        Paragraph("Etekcity Scale Measurement Report", styles["Title"]),
-        Paragraph(
-            f"Generated {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}"
-            f" &middot; {len(rows)} reading(s)",
-            styles["Normal"],
-        ),
-        Spacer(1, 0.25 * inch),
-    ]
-
     weight_header = f"Weight ({weight_label})"
+
     header = ["Date/Time (local)"]
     if report_config.include_address:
         header.append("Address")
@@ -175,8 +210,7 @@ def build_pdf(
 
     data = [header]
     for row in rows:
-        local_time = row.recorded_at.astimezone().strftime("%Y-%m-%d %H:%M:%S")
-        line = [local_time]
+        line = [_format_datetime(row.recorded_at, report_config.date_format)]
         if report_config.include_address:
             line.append(row.address)
         if report_config.include_model:
@@ -195,26 +229,82 @@ def build_pdf(
     if report_config.include_impedance:
         align_cols.append(header.index("Impedance (Ω)"))
 
-    style_commands = [
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2f5d8a")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 9),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-        (
-            "ROWBACKGROUNDS",
-            (0, 1),
-            (-1, -1),
-            [colors.white, colors.HexColor("#f0f0f0")],
-        ),
-    ]
-    style_commands.extend(
-        ("ALIGN", (idx, 1), (idx, -1), "RIGHT") for idx in align_cols
-    )
-
     table = Table(data, repeatRows=1)
-    table.setStyle(TableStyle(style_commands))
-    elements.append(table)
+    table.setStyle(_table_style(align_cols))
+    return table
+
+
+def _build_simple_table(rows: list[ReportRow], report_config: ReportConfig) -> Table:
+    """Build the simple layout: date/weight only, in side-by-side column pairs.
+
+    Readings fill one Date/Weight column pair top-to-bottom before moving to
+    the next pair, so a full page of readings doesn't leave most of the page
+    width empty the way a single narrow two-column table would.
+
+    Args:
+        rows: Measurement rows to include, oldest first.
+        report_config: Controls the weight unit and date/time format.
+
+    Returns:
+        A styled reportlab Table.
+    """
+    weight_factor, weight_label = _WEIGHT_CONVERSIONS[report_config.weight_unit]
+    pairs = min(_SIMPLE_LAYOUT_COLUMN_PAIRS, len(rows))
+    rows_per_column = -(-len(rows) // pairs)  # ceil division
+
+    header = ["Date/Time (local)", f"Weight ({weight_label})"] * pairs
+    data = [header]
+    for r in range(rows_per_column):
+        line: list[str] = []
+        for p in range(pairs):
+            idx = p * rows_per_column + r
+            if idx < len(rows):
+                row = rows[idx]
+                weight_value = (
+                    row.weight_kg * weight_factor if row.weight_kg is not None else None
+                )
+                line.append(_format_datetime(row.recorded_at, report_config.date_format))
+                line.append(f"{weight_value:.2f}" if weight_value is not None else "-")
+            else:
+                line.extend(["", ""])
+        data.append(line)
+
+    align_cols = [i for i in range(len(header)) if i % 2 == 1]
+    table = Table(data, repeatRows=1)
+    table.setStyle(_table_style(align_cols))
+    return table
+
+
+def build_pdf(
+    rows: list[ReportRow],
+    output_path: str,
+    report_config: ReportConfig = DEFAULT_REPORT_CONFIG,
+) -> None:
+    """Render measurement rows as a table in a PDF file.
+
+    Args:
+        rows: Measurement rows to include, oldest first.
+        output_path: Filesystem path to write the PDF to.
+        report_config: Controls the layout, which columns are shown, the
+            weight unit, and the date/time format.
+    """
+    styles = getSampleStyleSheet()
+    doc = SimpleDocTemplate(output_path, pagesize=letter)
+    elements = [
+        Paragraph("Etekcity Scale Measurement Report", styles["Title"]),
+        Paragraph(
+            f"Generated {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}"
+            f" &middot; {len(rows)} reading(s)",
+            styles["Normal"],
+        ),
+        Spacer(1, 0.25 * inch),
+    ]
+
+    if report_config.layout == "simple":
+        elements.append(_build_simple_table(rows, report_config))
+    else:
+        elements.append(_build_full_table(rows, report_config))
+
     doc.build(elements)
 
 

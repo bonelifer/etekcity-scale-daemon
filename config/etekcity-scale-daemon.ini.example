@@ -24,10 +24,17 @@ db_path = /var/lib/etekcity-scale-daemon/measurements.db
 log_level = INFO
 
 [report]
-# Columns to include in PDF reports (etekcity-scale-report), yes or no.
+# Layout for PDF reports (etekcity-scale-report):
+#   full   - one row per reading, with the columns below (default)
+#   simple - date/weight only, laid out in several side-by-side columns
+#            so a page isn't mostly empty
+layout = full
+# Columns to include in the "full" layout, yes or no.
 include_address = yes
 include_model = yes
 include_impedance = yes
 # Unit to render the Weight column in: kg, lb, or st. Stored measurements
 # are always in kilograms; this only affects report display.
 weight_unit = kg
+# Date/time format: us (MM/DD/YYYY, 12-hour) or world (DD/MM/YYYY, 24-hour)
+date_format = world

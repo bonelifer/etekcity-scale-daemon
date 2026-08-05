@@ -54,10 +54,12 @@ Leave `[scale] address` and `model` empty to auto-discover a scale on first run 
 | `scale` | `cooldown_seconds` | Seconds to ignore advertisements after a disconnect (GATT-based scales only). |
 | `storage` | `db_path` | Path to the SQLite database file. |
 | `daemon` | `log_level` | `DEBUG`, `INFO`, `WARNING`, or `ERROR`. |
-| `report` | `include_address` | Show the Address column in PDF reports: `yes` or `no`. |
-| `report` | `include_model` | Show the Model column in PDF reports: `yes` or `no`. |
-| `report` | `include_impedance` | Show the Impedance column in PDF reports: `yes` or `no`. |
+| `report` | `layout` | PDF layout: `full` (one row per reading) or `simple` (date/weight only, in side-by-side columns). |
+| `report` | `include_address` | Show the Address column in the `full` layout: `yes` or `no`. |
+| `report` | `include_model` | Show the Model column in the `full` layout: `yes` or `no`. |
+| `report` | `include_impedance` | Show the Impedance column in the `full` layout: `yes` or `no`. |
 | `report` | `weight_unit` | Unit to render the Weight column in: `kg`, `lb`, or `st`. |
+| `report` | `date_format` | `us` (MM/DD/YYYY, 12-hour) or `world` (DD/MM/YYYY, 24-hour). |
 
 ### systemd service
 
@@ -119,7 +121,9 @@ etekcity-scale-report --db /var/lib/etekcity-scale-daemon/measurements.db --outp
 
 Add `--address AA:BB:CC:DD:EE:FF` to restrict the report to one scale if the database has readings from more than one.
 
-Which columns appear and which unit the Weight column is rendered in are controlled by the `[report]` section of the config file (see the table above) — `--config` reads them, `--db` always uses the defaults (all columns, kilograms).
+The layout, which columns appear, the weight unit, and the date/time format are all controlled by the `[report]` section of the config file (see the table above) — `--config` reads them, `--db` always uses the defaults (`full` layout, all columns, kilograms, `world` date format).
+
+The `simple` layout drops every column except Date/Time and Weight and lays readings out in several side-by-side column pairs (filling one pair top-to-bottom before starting the next) instead of a single narrow two-column table.
 
 ## Troubleshooting
 

@@ -33,6 +33,8 @@ class ReportConfig:
     include_model: bool
     include_impedance: bool
     weight_unit: str  # "kg", "lb", or "st"
+    date_format: str  # "us" or "world"
+    layout: str  # "full" or "simple"
 
 
 DEFAULT_REPORT_CONFIG = ReportConfig(
@@ -40,9 +42,13 @@ DEFAULT_REPORT_CONFIG = ReportConfig(
     include_model=True,
     include_impedance=True,
     weight_unit="kg",
+    date_format="world",
+    layout="full",
 )
 
 _WEIGHT_UNITS = ("kg", "lb", "st")
+_DATE_FORMATS = ("us", "world")
+_LAYOUTS = ("full", "simple")
 
 
 def _parse_bool(value: str, key: str) -> bool:
@@ -145,6 +151,16 @@ def load_report_config(config_path: str) -> ReportConfig:
             f"report.weight_unit must be one of {_WEIGHT_UNITS}, got {weight_unit!r}"
         )
 
+    date_format = report.get("date_format", DEFAULT_REPORT_CONFIG.date_format).strip().lower()
+    if date_format not in _DATE_FORMATS:
+        raise ConfigError(
+            f"report.date_format must be one of {_DATE_FORMATS}, got {date_format!r}"
+        )
+
+    layout = report.get("layout", DEFAULT_REPORT_CONFIG.layout).strip().lower()
+    if layout not in _LAYOUTS:
+        raise ConfigError(f"report.layout must be one of {_LAYOUTS}, got {layout!r}")
+
     return ReportConfig(
         include_address=_parse_bool(
             report.get("include_address", "yes"), "report.include_address"
@@ -156,6 +172,8 @@ def load_report_config(config_path: str) -> ReportConfig:
             report.get("include_impedance", "yes"), "report.include_impedance"
         ),
         weight_unit=weight_unit,
+        date_format=date_format,
+        layout=layout,
     )
 
 
