@@ -13,13 +13,26 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-from .config import load_config
+from .config import (
+    DEFAULT_REPORT_CONFIG,
+    ConfigError,
+    ReportConfig,
+    load_config,
+    load_report_config,
+)
 
 _PERIOD_DAYS = {
     "7d": 7,
     "30d": 30,
     "90d": 90,
     "1y": 365,
+}
+
+# kg -> (conversion factor, unit label)
+_WEIGHT_CONVERSIONS = {
+    "kg": (1.0, "kg"),
+    "lb": (2.2046226218487757, "lb"),
+    "st": (0.15747304441776975, "st"),
 }
 
 
@@ -125,13 +138,21 @@ def fetch_rows(
         connection.close()
 
 
-def build_pdf(rows: list[ReportRow], output_path: str) -> None:
+def build_pdf(
+    rows: list[ReportRow],
+    output_path: str,
+    report_config: ReportConfig = DEFAULT_REPORT_CONFIG,
+) -> None:
     """Render measurement rows as a table in a PDF file.
 
     Args:
         rows: Measurement rows to include, oldest first.
         output_path: Filesystem path to write the PDF to.
+        report_config: Controls which columns are shown and which unit
+            weights are rendered in.
     """
+    weight_factor, weight_label = _WEIGHT_CONVERSIONS[report_config.weight_unit]
+
     styles = getSampleStyleSheet()
     doc = SimpleDocTemplate(output_path, pagesize=letter)
     elements = [
@@ -144,47 +165,59 @@ def build_pdf(rows: list[ReportRow], output_path: str) -> None:
         Spacer(1, 0.25 * inch),
     ]
 
-    header = [
-        "Date/Time (local)",
-        "Address",
-        "Model",
-        "Weight (kg)",
-        "Impedance (Ω)",
-        "Unit",
-    ]
+    weight_header = f"Weight ({weight_label})"
+    header = ["Date/Time (local)"]
+    if report_config.include_address:
+        header.append("Address")
+    if report_config.include_model:
+        header.append("Model")
+    header.append(weight_header)
+    if report_config.include_impedance:
+        header.append("Impedance (Ω)")
+    header.append("Unit")
+
     data = [header]
     for row in rows:
         local_time = row.recorded_at.astimezone().strftime("%Y-%m-%d %H:%M:%S")
-        data.append(
-            [
-                local_time,
-                row.address,
-                row.model,
-                f"{row.weight_kg:.2f}" if row.weight_kg is not None else "-",
-                f"{row.impedance_ohms:.0f}" if row.impedance_ohms is not None else "-",
-                row.display_unit or "-",
-            ]
+        line = [local_time]
+        if report_config.include_address:
+            line.append(row.address)
+        if report_config.include_model:
+            line.append(row.model)
+        weight_value = (
+            row.weight_kg * weight_factor if row.weight_kg is not None else None
         )
+        line.append(f"{weight_value:.2f}" if weight_value is not None else "-")
+        if report_config.include_impedance:
+            line.append(
+                f"{row.impedance_ohms:.0f}" if row.impedance_ohms is not None else "-"
+            )
+        line.append(weight_label.upper())
+        data.append(line)
+
+    align_cols = [header.index(weight_header)]
+    if report_config.include_impedance:
+        align_cols.append(header.index("Impedance (Ω)"))
+
+    style_commands = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2f5d8a")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        (
+            "ROWBACKGROUNDS",
+            (0, 1),
+            (-1, -1),
+            [colors.white, colors.HexColor("#f0f0f0")],
+        ),
+    ]
+    style_commands.extend(
+        ("ALIGN", (idx, 1), (idx, -1), "RIGHT") for idx in align_cols
+    )
 
     table = Table(data, repeatRows=1)
-    table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2f5d8a")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, -1), 9),
-                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-                (
-                    "ROWBACKGROUNDS",
-                    (0, 1),
-                    (-1, -1),
-                    [colors.white, colors.HexColor("#f0f0f0")],
-                ),
-                ("ALIGN", (3, 1), (4, -1), "RIGHT"),
-            ]
-        )
-    )
+    table.setStyle(TableStyle(style_commands))
     elements.append(table)
     doc.build(elements)
 
@@ -253,8 +286,14 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
 
     db_path = args.db
+    report_config = DEFAULT_REPORT_CONFIG
     if args.config:
-        db_path = load_config(args.config).db_path
+        try:
+            db_path = load_config(args.config).db_path
+            report_config = load_report_config(args.config)
+        except ConfigError as exc:
+            print(f"Error: {exc}")
+            return 1
 
     start, end = _resolve_range(args.period, args.from_date, args.to_date)
     rows = fetch_rows(db_path, args.address, start, end)
@@ -263,7 +302,7 @@ def main(argv: list[str] | None = None) -> int:
         print("No measurements found for the given range/filters.")
         return 1
 
-    build_pdf(rows, args.output)
+    build_pdf(rows, args.output, report_config)
     print(f"Wrote {len(rows)} reading(s) to {args.output}")
     return 0
 

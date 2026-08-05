@@ -25,6 +25,47 @@ class DaemonConfig:
     log_level: str
 
 
+@dataclass
+class ReportConfig:
+    """Parsed [report] section controlling PDF report rendering."""
+
+    include_address: bool
+    include_model: bool
+    include_impedance: bool
+    weight_unit: str  # "kg", "lb", or "st"
+
+
+DEFAULT_REPORT_CONFIG = ReportConfig(
+    include_address=True,
+    include_model=True,
+    include_impedance=True,
+    weight_unit="kg",
+)
+
+_WEIGHT_UNITS = ("kg", "lb", "st")
+
+
+def _parse_bool(value: str, key: str) -> bool:
+    """Parse a yes/no-style config value.
+
+    Args:
+        value: Raw string from the config file.
+        key: Dotted key name, used in the error message.
+
+    Returns:
+        The parsed boolean.
+
+    Raises:
+        ConfigError: If ``value`` isn't a recognized yes/no spelling.
+    """
+    normalized = value.strip().lower()
+    if normalized in ("yes", "true", "1", "on"):
+        return True
+    if normalized in ("no", "false", "0", "off"):
+        return False
+    raise ConfigError(f"{key} must be yes/no, got {value!r}")
+
+
 def load_config(config_path: str) -> DaemonConfig:
     """Load and validate the daemon configuration file.
 
@@ -69,6 +110,52 @@ def load_config(config_path: str) -> DaemonConfig:
         cooldown_seconds=cooldown_seconds,
         db_path=db_path,
         log_level=daemon.get("log_level", "INFO").strip().upper(),
+    )
+
+
+def load_report_config(config_path: str) -> ReportConfig:
+    """Load the ``[report]`` section of the daemon config file, if present.
+
+    Args:
+        config_path: Path to the INI configuration file.
+
+    Returns:
+        The parsed report configuration, or ``DEFAULT_REPORT_CONFIG`` (all
+        columns shown, weights in kilograms) if the file has no ``[report]``
+        section.
+
+    Raises:
+        ConfigError: If the file is missing or a ``[report]`` value is invalid.
+    """
+    path = Path(config_path)
+    if not path.is_file():
+        raise ConfigError(f"Config file not found: {path}")
+
+    parser = configparser.ConfigParser()
+    parser.read(path)
+
+    if not parser.has_section("report"):
+        return DEFAULT_REPORT_CONFIG
+
+    report = parser["report"]
+
+    weight_unit = report.get("weight_unit", DEFAULT_REPORT_CONFIG.weight_unit).strip().lower()
+    if weight_unit not in _WEIGHT_UNITS:
+        raise ConfigError(
+            f"report.weight_unit must be one of {_WEIGHT_UNITS}, got {weight_unit!r}"
+        )
+
+    return ReportConfig(
+        include_address=_parse_bool(
+            report.get("include_address", "yes"), "report.include_address"
+        ),
+        include_model=_parse_bool(
+            report.get("include_model", "yes"), "report.include_model"
+        ),
+        include_impedance=_parse_bool(
+            report.get("include_impedance", "yes"), "report.include_impedance"
+        ),
+        weight_unit=weight_unit,
     )
 
 

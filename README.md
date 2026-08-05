@@ -54,6 +54,10 @@ Leave `[scale] address` and `model` empty to auto-discover a scale on first run 
 | `scale` | `cooldown_seconds` | Seconds to ignore advertisements after a disconnect (GATT-based scales only). |
 | `storage` | `db_path` | Path to the SQLite database file. |
 | `daemon` | `log_level` | `DEBUG`, `INFO`, `WARNING`, or `ERROR`. |
+| `report` | `include_address` | Show the Address column in PDF reports: `yes` or `no`. |
+| `report` | `include_model` | Show the Model column in PDF reports: `yes` or `no`. |
+| `report` | `include_impedance` | Show the Impedance column in PDF reports: `yes` or `no`. |
+| `report` | `weight_unit` | Unit to render the Weight column in: `kg`, `lb`, or `st`. |
 
 ### systemd service
 
@@ -114,6 +118,8 @@ etekcity-scale-report --db /var/lib/etekcity-scale-daemon/measurements.db --outp
 ```
 
 Add `--address AA:BB:CC:DD:EE:FF` to restrict the report to one scale if the database has readings from more than one.
+
+Which columns appear and which unit the Weight column is rendered in are controlled by the `[report]` section of the config file (see the table above) — `--config` reads them, `--db` always uses the defaults (all columns, kilograms).
 
 ## Troubleshooting
 

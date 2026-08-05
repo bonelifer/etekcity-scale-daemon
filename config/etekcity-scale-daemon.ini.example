@@ -22,3 +22,12 @@ db_path = /var/lib/etekcity-scale-daemon/measurements.db
 [daemon]
 # Logging level: DEBUG, INFO, WARNING, ERROR
 log_level = INFO
+
+[report]
+# Columns to include in PDF reports (etekcity-scale-report), yes or no.
+include_address = yes
+include_model = yes
+include_impedance = yes
+# Unit to render the Weight column in: kg, lb, or st. Stored measurements
+# are always in kilograms; this only affects report display.
+weight_unit = kg
