@@ -60,6 +60,8 @@ Leave `[scale] address` and `model` empty to auto-discover a scale on first run 
 | `report` | `include_impedance` | Show the Impedance column in the `full` layout: `yes` or `no`. |
 | `report` | `weight_unit` | Unit to render the Weight column in: `kg`, `lb`, or `st`. |
 | `report` | `date_format` | `us` (MM/DD/YYYY, 12-hour) or `world` (DD/MM/YYYY, 24-hour). |
+| `patient` | `name` | Patient name printed below the title in PDF reports. Leave blank to omit. |
+| `patient` | `email` | Patient email printed below the title in PDF reports. Leave blank to omit. |
 
 ### systemd service
 
@@ -126,6 +128,8 @@ The layout, which columns appear, the weight unit, and the date/time format are 
 The `simple` layout drops every column except Date/Time and Weight and lays readings out in several side-by-side column pairs (filling one pair top-to-bottom before starting the next) instead of a single narrow two-column table.
 
 See [samples/](samples/) for a rendered PDF of every layout/unit/date-format combination.
+
+Set `[patient] name` and/or `email` (only read from `--config`, not `--db`) to print that identifying info below the title — handy when handing a report to a doctor. Leave either blank to omit it; leave both blank and no patient line is printed at all.
 
 ## Troubleshooting
 

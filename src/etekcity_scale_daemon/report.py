@@ -6,6 +6,7 @@ import argparse
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
@@ -14,10 +15,13 @@ from reportlab.lib.units import inch
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from .config import (
+    DEFAULT_PATIENT_CONFIG,
     DEFAULT_REPORT_CONFIG,
     ConfigError,
+    PatientConfig,
     ReportConfig,
     load_config,
+    load_patient_config,
     load_report_config,
 )
 
@@ -279,6 +283,7 @@ def build_pdf(
     rows: list[ReportRow],
     output_path: str,
     report_config: ReportConfig = DEFAULT_REPORT_CONFIG,
+    patient_config: PatientConfig = DEFAULT_PATIENT_CONFIG,
 ) -> None:
     """Render measurement rows as a table in a PDF file.
 
@@ -287,6 +292,8 @@ def build_pdf(
         output_path: Filesystem path to write the PDF to.
         report_config: Controls the layout, which columns are shown, the
             weight unit, and the date/time format.
+        patient_config: Optional patient name/email to print below the
+            title; fields left blank are omitted.
     """
     styles = getSampleStyleSheet()
     doc = SimpleDocTemplate(output_path, pagesize=letter)
@@ -297,8 +304,12 @@ def build_pdf(
             f" &middot; {len(rows)} reading(s)",
             styles["Normal"],
         ),
-        Spacer(1, 0.25 * inch),
     ]
+    if patient_config.name:
+        elements.append(Paragraph(f"Patient: {escape(patient_config.name)}", styles["Normal"]))
+    if patient_config.email:
+        elements.append(Paragraph(f"Email: {escape(patient_config.email)}", styles["Normal"]))
+    elements.append(Spacer(1, 0.25 * inch))
 
     if report_config.layout == "simple":
         elements.append(_build_simple_table(rows, report_config))
@@ -373,10 +384,12 @@ def main(argv: list[str] | None = None) -> int:
 
     db_path = args.db
     report_config = DEFAULT_REPORT_CONFIG
+    patient_config = DEFAULT_PATIENT_CONFIG
     if args.config:
         try:
             db_path = load_config(args.config).db_path
             report_config = load_report_config(args.config)
+            patient_config = load_patient_config(args.config)
         except ConfigError as exc:
             print(f"Error: {exc}")
             return 1
@@ -388,7 +401,7 @@ def main(argv: list[str] | None = None) -> int:
         print("No measurements found for the given range/filters.")
         return 1
 
-    build_pdf(rows, args.output, report_config)
+    build_pdf(rows, args.output, report_config, patient_config)
     print(f"Wrote {len(rows)} reading(s) to {args.output}")
     return 0
 

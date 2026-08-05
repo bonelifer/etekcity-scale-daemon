@@ -51,6 +51,17 @@ _DATE_FORMATS = ("us", "world")
 _LAYOUTS = ("full", "simple")
 
 
+@dataclass
+class PatientConfig:
+    """Parsed [patient] section: optional identifying info for PDF reports."""
+
+    name: str
+    email: str
+
+
+DEFAULT_PATIENT_CONFIG = PatientConfig(name="", email="")
+
+
 def _parse_bool(value: str, key: str) -> bool:
     """Parse a yes/no-style config value.
 
@@ -174,6 +185,39 @@ def load_report_config(config_path: str) -> ReportConfig:
         weight_unit=weight_unit,
         date_format=date_format,
         layout=layout,
+    )
+
+
+def load_patient_config(config_path: str) -> PatientConfig:
+    """Load the ``[patient]`` section of the daemon config file, if present.
+
+    Both fields are free text and optional; whichever are left blank are
+    simply omitted from PDF reports.
+
+    Args:
+        config_path: Path to the INI configuration file.
+
+    Returns:
+        The parsed patient info, or ``DEFAULT_PATIENT_CONFIG`` (both blank)
+        if the file has no ``[patient]`` section.
+
+    Raises:
+        ConfigError: If the file is missing.
+    """
+    path = Path(config_path)
+    if not path.is_file():
+        raise ConfigError(f"Config file not found: {path}")
+
+    parser = configparser.ConfigParser()
+    parser.read(path)
+
+    if not parser.has_section("patient"):
+        return DEFAULT_PATIENT_CONFIG
+
+    patient = parser["patient"]
+    return PatientConfig(
+        name=patient.get("name", "").strip(),
+        email=patient.get("email", "").strip(),
     )
 
 
