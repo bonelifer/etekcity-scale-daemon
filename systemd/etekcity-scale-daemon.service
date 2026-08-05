@@ -12,7 +12,20 @@ ExecStart=/usr/bin/etekcity-scale-daemon --config /etc/etekcity-scale-daemon/con
 Restart=on-failure
 RestartSec=5
 StateDirectory=etekcity-scale-daemon
+
+# Sandboxing. /etc/etekcity-scale-daemon is explicitly kept writable: on
+# first run the daemon discovers the scale and rewrites its address/model
+# back into the config file there (see persist_discovered_scale()).
 NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/etc/etekcity-scale-daemon
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RemoveIPC=yes
 
 [Install]
 WantedBy=multi-user.target

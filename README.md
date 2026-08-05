@@ -97,6 +97,8 @@ Watch the discovery step (first run) with:
 sudo journalctl -u etekcity-scale-daemon -f
 ```
 
+The unit is sandboxed (`ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`, and related hardening directives). `/etc/etekcity-scale-daemon` is explicitly carved out as writable via `ReadWritePaths`, since the daemon rewrites its config file there the first time it discovers a scale — if you relocate the config elsewhere, update `ReadWritePaths` (and `ExecStart --config`) to match, or discovery-persist will fail with a read-only filesystem error.
+
 ## Manual usage
 
 ```bash
