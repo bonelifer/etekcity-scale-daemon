@@ -33,6 +33,7 @@ class ReportConfig:
     include_model: bool
     include_impedance: bool
     include_heart_rate: bool
+    include_summary: bool
     weight_unit: str  # "kg", "lb", or "st"
     date_format: str  # "us" or "world"
     layout: str  # "full" or "simple"
@@ -44,6 +45,7 @@ DEFAULT_REPORT_CONFIG = ReportConfig(
     include_model=True,
     include_impedance=True,
     include_heart_rate=False,
+    include_summary=False,
     weight_unit="kg",
     date_format="world",
     layout="full",
@@ -193,6 +195,9 @@ def load_report_config(config_path: str) -> ReportConfig:
         ),
         include_heart_rate=_parse_bool(
             report.get("include_heart_rate", "no"), "report.include_heart_rate"
+        ),
+        include_summary=_parse_bool(
+            report.get("include_summary", "no"), "report.include_summary"
         ),
         weight_unit=weight_unit,
         date_format=date_format,
