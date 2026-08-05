@@ -7,6 +7,7 @@ import asyncio
 import logging
 import signal
 from datetime import datetime, timezone
+from pathlib import Path
 
 from bleak import BleakScanner
 from etekcity_esf551_ble import (
@@ -22,7 +23,14 @@ from etekcity_esf551_ble import (
 )
 
 from ._version import __version__
-from .config import ConfigError, DaemonConfig, load_config, persist_discovered_scale
+from .config import (
+    ConfigError,
+    DaemonConfig,
+    load_config,
+    load_patient_config,
+    load_report_config,
+    persist_discovered_scale,
+)
 from .storage import MeasurementStore
 
 _LOGGER = logging.getLogger("etekcity_scale_daemon")
@@ -154,6 +162,64 @@ async def run_daemon(config: DaemonConfig) -> None:
         store.close()
 
 
+def _check_config(config_path: str) -> int:
+    """Validate a config file against every section loader, without running.
+
+    Args:
+        config_path: Path to the INI configuration file.
+
+    Returns:
+        0 if the file is valid (a summary is printed), 1 otherwise (each
+        error is printed).
+    """
+    if not Path(config_path).is_file():
+        print(f"Error: Config file not found: {config_path}")
+        return 1
+
+    errors: list[str] = []
+    daemon_config = report_config = patient_config = None
+
+    try:
+        daemon_config = load_config(config_path)
+    except ConfigError as exc:
+        errors.append(str(exc))
+    try:
+        report_config = load_report_config(config_path)
+    except ConfigError as exc:
+        errors.append(str(exc))
+    try:
+        patient_config = load_patient_config(config_path)
+    except ConfigError as exc:
+        errors.append(str(exc))
+
+    if errors:
+        print(f"{config_path}: INVALID")
+        for error in errors:
+            print(f"  - {error}")
+        return 1
+
+    print(f"{config_path}: OK")
+    print(
+        "  scale: address="
+        f"{daemon_config.address or '(auto-discover)'} model="
+        f"{daemon_config.model or '(auto-discover)'} adapter="
+        f"{daemon_config.adapter or '(default)'}"
+    )
+    print(f"  storage: db_path={daemon_config.db_path}")
+    print(f"  daemon: log_level={daemon_config.log_level}")
+    print(
+        "  report: layout="
+        f"{report_config.layout} weight_unit={report_config.weight_unit} "
+        f"date_format={report_config.date_format} page_size={report_config.page_size}"
+    )
+    print(
+        "  patient: name="
+        f"{'(set)' if patient_config.name else '(blank)'} email="
+        f"{'(set)' if patient_config.email else '(blank)'}"
+    )
+    return 0
+
+
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
@@ -168,6 +234,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--config",
         required=True,
         help="Path to the daemon's INI configuration file",
+    )
+    parser.add_argument(
+        "-k",
+        "--check-config",
+        action="store_true",
+        help="Validate the config file and exit, without starting the daemon",
     )
     parser.add_argument(
         "-v",
@@ -194,6 +266,9 @@ def main(argv: list[str] | None = None) -> int:
         Process exit code.
     """
     args = _parse_args(argv)
+
+    if args.check_config:
+        return _check_config(args.config)
 
     try:
         config = load_config(args.config)

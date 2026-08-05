@@ -104,6 +104,12 @@ etekcity-scale-daemon --config /etc/etekcity-scale-daemon/config.ini
 etekcity-scale-daemon --config /etc/etekcity-scale-daemon/config.ini --verbose
 ```
 
+Validate a config file (all sections) without starting the daemon:
+
+```bash
+etekcity-scale-daemon --config /etc/etekcity-scale-daemon/config.ini --check-config
+```
+
 ## Database schema
 
 Each measurement is inserted as one row into the `measurements` table:
