@@ -21,6 +21,7 @@ Homepage = "https://github.com/bonelifer/etekcity-scale-daemon"
 [project.scripts]
 etekcity-scale-daemon = "etekcity_scale_daemon.cli:main"
 etekcity-scale-report = "etekcity_scale_daemon.report:main"
+etekcity-scale-prune = "etekcity_scale_daemon.prune:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/etekcity_scale_daemon"]

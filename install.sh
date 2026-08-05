@@ -31,6 +31,7 @@ echo "==> Installing etekcity-scale-daemon from ${REPO_DIR}"
 echo "==> Linking commands into /usr/bin"
 ln -sf "${INSTALL_DIR}/venv/bin/etekcity-scale-daemon" /usr/bin/etekcity-scale-daemon
 ln -sf "${INSTALL_DIR}/venv/bin/etekcity-scale-report" /usr/bin/etekcity-scale-report
+ln -sf "${INSTALL_DIR}/venv/bin/etekcity-scale-prune" /usr/bin/etekcity-scale-prune
 
 echo "==> Seeding config"
 mkdir -p "${CONFIG_DIR}"
