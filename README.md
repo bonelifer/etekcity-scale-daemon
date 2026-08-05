@@ -125,6 +125,8 @@ The layout, which columns appear, the weight unit, and the date/time format are 
 
 The `simple` layout drops every column except Date/Time and Weight and lays readings out in several side-by-side column pairs (filling one pair top-to-bottom before starting the next) instead of a single narrow two-column table.
 
+See [samples/](samples/) for a rendered PDF of every layout/unit/date-format combination.
+
 ## Troubleshooting
 
 On Raspberry Pi (and other BlueZ-based Linux systems), a `org.bluez.Error.InProgress` error usually clears up with:
