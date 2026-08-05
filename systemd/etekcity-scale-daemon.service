@@ -1,0 +1,18 @@
+[Unit]
+Description=Etekcity smart scale BLE logging daemon
+After=bluetooth.target
+Wants=bluetooth.target
+
+[Service]
+Type=simple
+User=etekcity-scale-daemon
+Group=etekcity-scale-daemon
+SupplementaryGroups=bluetooth
+ExecStart=/usr/bin/etekcity-scale-daemon --config /etc/etekcity-scale-daemon/config.ini
+Restart=on-failure
+RestartSec=5
+StateDirectory=etekcity-scale-daemon
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

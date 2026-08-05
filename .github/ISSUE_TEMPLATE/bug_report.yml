@@ -1,0 +1,54 @@
+name: Bug Report
+description: Report a problem with etekcity-scale-daemon
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: scale-model
+    attributes:
+      label: Scale model
+      options:
+        - ESF-551
+        - ESF-24
+        - FIT-8S
+        - EFS-A591S (Apex HR)
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: daemon-version
+    attributes:
+      label: etekcity-scale-daemon version
+      description: Output of `etekcity-scale-daemon --version`
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS / platform
+      placeholder: e.g. Raspberry Pi OS Bookworm on a Pi 4
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: Output of `sudo journalctl -u etekcity-scale-daemon` or `--verbose` run output
+      render: shell

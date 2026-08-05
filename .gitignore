@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+
+# Live config seeded from config/etekcity-scale-daemon.ini.example
+config/etekcity-scale-daemon.ini
+
+# Local SQLite database and logs produced by running the daemon
+*.db
+*.db-journal
+*.log

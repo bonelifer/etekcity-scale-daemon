@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "etekcity-scale-daemon"
+version = "0.1.0"
+description = "Standalone BLE daemon that logs Etekcity smart scale measurements to SQLite"
+readme = "README.md"
+license = "GPL-3.0-only"
+requires-python = ">=3.11"
+dependencies = [
+    "etekcity_esf551_ble>=0.8.0,<1.0.0",
+    "bleak>=2.0.0,<4.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/bonelifer/etekcity-scale-daemon"
+
+[project.scripts]
+etekcity-scale-daemon = "etekcity_scale_daemon.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/etekcity_scale_daemon"]
