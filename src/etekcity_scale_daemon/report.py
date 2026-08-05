@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -197,8 +198,21 @@ def _table_style(align_cols: list[int]) -> TableStyle:
     return TableStyle(style_commands)
 
 
-def _build_full_table(rows: list[ReportRow], report_config: ReportConfig) -> Table:
-    """Build the full-detail table: date/time plus whichever columns are enabled.
+@dataclass
+class _FullColumns:
+    """Header and raw (unformatted) data shared by the full table and CSV export."""
+
+    header: list[str]
+    rows: list[list[object]]  # str for text columns; float | None for numeric ones
+
+
+def _full_columns(rows: list[ReportRow], report_config: ReportConfig) -> _FullColumns:
+    """Build the header and raw values for whichever columns are enabled.
+
+    Numeric columns (weight, impedance, heart rate) are left as ``float |
+    None`` rather than formatted strings, so PDF rendering (dashes for
+    missing values, fixed decimals) and CSV export (blank for missing
+    values) can each format them appropriately.
 
     Args:
         rows: Measurement rows to include, oldest first.
@@ -206,7 +220,7 @@ def _build_full_table(rows: list[ReportRow], report_config: ReportConfig) -> Tab
             and the date/time format.
 
     Returns:
-        A styled reportlab Table.
+        The shared header and per-row values.
     """
     weight_factor, weight_label = _WEIGHT_CONVERSIONS[report_config.weight_unit]
     weight_header = f"Weight ({weight_label})"
@@ -222,36 +236,111 @@ def _build_full_table(rows: list[ReportRow], report_config: ReportConfig) -> Tab
     if report_config.include_heart_rate:
         header.append("Heart Rate (bpm)")
 
-    data = [header]
+    data: list[list[object]] = []
     for row in rows:
-        line = [_format_datetime(row.recorded_at, report_config.date_format)]
+        line: list[object] = [_format_datetime(row.recorded_at, report_config.date_format)]
         if report_config.include_address:
             line.append(row.address)
         if report_config.include_model:
             line.append(row.model)
-        weight_value = (
-            row.weight_kg * weight_factor if row.weight_kg is not None else None
-        )
-        line.append(f"{weight_value:.2f}" if weight_value is not None else "-")
+        line.append(row.weight_kg * weight_factor if row.weight_kg is not None else None)
         if report_config.include_impedance:
-            line.append(
-                f"{row.impedance_ohms:.0f}" if row.impedance_ohms is not None else "-"
-            )
+            line.append(row.impedance_ohms)
         if report_config.include_heart_rate:
-            line.append(
-                f"{row.heart_rate_bpm:.0f}" if row.heart_rate_bpm is not None else "-"
-            )
+            line.append(row.heart_rate_bpm)
         data.append(line)
 
-    align_cols = [header.index(weight_header)]
-    if report_config.include_impedance:
-        align_cols.append(header.index("Impedance (Ω)"))
-    if report_config.include_heart_rate:
-        align_cols.append(header.index("Heart Rate (bpm)"))
+    return _FullColumns(header=header, rows=data)
+
+
+def _build_full_table(rows: list[ReportRow], report_config: ReportConfig) -> Table:
+    """Build the full-detail table: date/time plus whichever columns are enabled.
+
+    Args:
+        rows: Measurement rows to include, oldest first.
+        report_config: Controls which columns are shown, the weight unit,
+            and the date/time format.
+
+    Returns:
+        A styled reportlab Table.
+    """
+    columns = _full_columns(rows, report_config)
+    header = columns.header
+    weight_idx = header.index(f"Weight ({_WEIGHT_CONVERSIONS[report_config.weight_unit][1]})")
+    impedance_idx = header.index("Impedance (Ω)") if report_config.include_impedance else None
+    heart_rate_idx = (
+        header.index("Heart Rate (bpm)") if report_config.include_heart_rate else None
+    )
+
+    data = [header]
+    for line in columns.rows:
+        formatted = list(line)
+        formatted[weight_idx] = (
+            f"{line[weight_idx]:.2f}" if line[weight_idx] is not None else "-"
+        )
+        if impedance_idx is not None:
+            formatted[impedance_idx] = (
+                f"{line[impedance_idx]:.0f}" if line[impedance_idx] is not None else "-"
+            )
+        if heart_rate_idx is not None:
+            formatted[heart_rate_idx] = (
+                f"{line[heart_rate_idx]:.0f}" if line[heart_rate_idx] is not None else "-"
+            )
+        data.append(formatted)
+
+    align_cols = [weight_idx]
+    if impedance_idx is not None:
+        align_cols.append(impedance_idx)
+    if heart_rate_idx is not None:
+        align_cols.append(heart_rate_idx)
 
     table = Table(data, repeatRows=1)
     table.setStyle(_table_style(align_cols))
     return table
+
+
+def build_csv(
+    rows: list[ReportRow],
+    output_path: str,
+    report_config: ReportConfig = DEFAULT_REPORT_CONFIG,
+) -> None:
+    """Write measurement rows as CSV.
+
+    Only the column toggles, weight unit, and date/time format apply;
+    layout, page size, the summary line, and patient info are PDF-only
+    concerns and have no effect here.
+
+    Args:
+        rows: Measurement rows to include, oldest first.
+        output_path: Filesystem path to write the CSV to.
+        report_config: Controls which columns are shown, the weight unit,
+            and the date/time format.
+    """
+    columns = _full_columns(rows, report_config)
+    header = columns.header
+    weight_idx = header.index(f"Weight ({_WEIGHT_CONVERSIONS[report_config.weight_unit][1]})")
+    impedance_idx = header.index("Impedance (Ω)") if report_config.include_impedance else None
+    heart_rate_idx = (
+        header.index("Heart Rate (bpm)") if report_config.include_heart_rate else None
+    )
+
+    with open(output_path, "w", newline="", encoding="utf-8") as csv_file:
+        writer = csv.writer(csv_file)
+        writer.writerow(header)
+        for line in columns.rows:
+            formatted = list(line)
+            formatted[weight_idx] = (
+                f"{line[weight_idx]:.2f}" if line[weight_idx] is not None else ""
+            )
+            if impedance_idx is not None:
+                formatted[impedance_idx] = (
+                    f"{line[impedance_idx]:.0f}" if line[impedance_idx] is not None else ""
+                )
+            if heart_rate_idx is not None:
+                formatted[heart_rate_idx] = (
+                    f"{line[heart_rate_idx]:.0f}" if line[heart_rate_idx] is not None else ""
+                )
+            writer.writerow(formatted)
 
 
 def _build_simple_table(rows: list[ReportRow], report_config: ReportConfig) -> Table:
@@ -392,10 +481,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Path to the SQLite database file, bypassing the config file",
     )
     parser.add_argument(
+        "-F",
+        "--format",
+        choices=["pdf", "csv"],
+        default="pdf",
+        help="Output format (default: %(default)s)",
+    )
+    parser.add_argument(
         "-o",
         "--output",
-        default="measurements-report.pdf",
-        help="Output PDF file path (default: %(default)s)",
+        help="Output file path (default: measurements-report.<format>)",
     )
     parser.add_argument(
         "-p",
@@ -454,8 +549,12 @@ def main(argv: list[str] | None = None) -> int:
         print("No measurements found for the given range/filters.")
         return 1
 
-    build_pdf(rows, args.output, report_config, patient_config)
-    print(f"Wrote {len(rows)} reading(s) to {args.output}")
+    output = args.output or f"measurements-report.{args.format}"
+    if args.format == "csv":
+        build_csv(rows, output, report_config)
+    else:
+        build_pdf(rows, output, report_config, patient_config)
+    print(f"Wrote {len(rows)} reading(s) to {output}")
     return 0
 
 

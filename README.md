@@ -127,9 +127,9 @@ Each measurement is inserted as one row into the `measurements` table:
 
 Query it directly with `sqlite3`, or point any BI/graphing tool at the file.
 
-## PDF reports
+## Reports
 
-`etekcity-scale-report` reads the database and writes a table of readings to a PDF file:
+`etekcity-scale-report` reads the database and writes a table of readings to a PDF or CSV file:
 
 ```bash
 # Every reading on record
@@ -146,6 +146,14 @@ etekcity-scale-report --db /var/lib/etekcity-scale-daemon/measurements.db --outp
 ```
 
 Add `--address AA:BB:CC:DD:EE:FF` to restrict the report to one scale if the database has readings from more than one.
+
+Add `--format csv` for a CSV file instead of a PDF (default output path becomes `measurements-report.csv`):
+
+```bash
+etekcity-scale-report --config /etc/etekcity-scale-daemon/config.ini --format csv --output report.csv
+```
+
+CSV export always uses the `full` layout's column set (respecting `include_address`/`include_model`/`include_impedance`/`include_heart_rate`, `weight_unit`, and `date_format`) — `layout`, `page_size`, `include_summary`, and `[patient]` are PDF-only and have no effect on CSV.
 
 The layout, which columns appear, the weight unit, and the date/time format are all controlled by the `[report]` section of the config file (see the table above) — `--config` reads them, `--db` always uses the defaults (`full` layout, all columns, kilograms, `world` date format).
 
