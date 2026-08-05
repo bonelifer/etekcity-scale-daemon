@@ -38,6 +38,10 @@ include_address = yes
 include_model = yes
 include_impedance = yes
 
+# Heart rate is only reported by the EFS-A591S (Apex HR) model; defaults to
+# no so other models don't get a column full of dashes.
+include_heart_rate = no
+
 # Unit to render the Weight column in: kg, lb, or st. Stored measurements
 # are always in kilograms; this only affects report display.
 weight_unit = kg
