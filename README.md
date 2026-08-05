@@ -95,6 +95,26 @@ Each measurement is inserted as one row into the `measurements` table:
 
 Query it directly with `sqlite3`, or point any BI/graphing tool at the file.
 
+## PDF reports
+
+`etekcity-scale-report` reads the database and writes a table of readings to a PDF file:
+
+```bash
+# Every reading on record
+etekcity-scale-report --config /etc/etekcity-scale-daemon/config.ini --output report.pdf
+
+# Preset ranges: 7d, 30d, 90d, 1y, all (default: all)
+etekcity-scale-report --config /etc/etekcity-scale-daemon/config.ini --period 30d --output last-30-days.pdf
+
+# Explicit date range (--to defaults to now if omitted)
+etekcity-scale-report --config /etc/etekcity-scale-daemon/config.ini --from 2026-01-01 --to 2026-03-31 --output q1.pdf
+
+# Point directly at a database file instead of a config
+etekcity-scale-report --db /var/lib/etekcity-scale-daemon/measurements.db --output report.pdf
+```
+
+Add `--address AA:BB:CC:DD:EE:FF` to restrict the report to one scale if the database has readings from more than one.
+
 ## Troubleshooting
 
 On Raspberry Pi (and other BlueZ-based Linux systems), a `org.bluez.Error.InProgress` error usually clears up with:
