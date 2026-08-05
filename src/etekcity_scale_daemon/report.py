@@ -45,7 +45,6 @@ class ReportRow:
     model: str
     weight_kg: float | None
     impedance_ohms: float | None
-    display_unit: str | None
 
 
 def _resolve_range(
@@ -100,8 +99,8 @@ def fetch_rows(
         Matching rows ordered oldest first.
     """
     query = (
-        "SELECT recorded_at, address, model, weight_kg, impedance_ohms, "
-        "display_unit FROM measurements"
+        "SELECT recorded_at, address, model, weight_kg, impedance_ohms "
+        "FROM measurements"
     )
     clauses: list[str] = []
     params: list[str] = []
@@ -130,7 +129,6 @@ def fetch_rows(
                 model=row[2],
                 weight_kg=row[3],
                 impedance_ohms=row[4],
-                display_unit=row[5],
             )
             for row in cursor.fetchall()
         ]
@@ -174,7 +172,6 @@ def build_pdf(
     header.append(weight_header)
     if report_config.include_impedance:
         header.append("Impedance (Ω)")
-    header.append("Unit")
 
     data = [header]
     for row in rows:
@@ -192,7 +189,6 @@ def build_pdf(
             line.append(
                 f"{row.impedance_ohms:.0f}" if row.impedance_ohms is not None else "-"
             )
-        line.append(weight_label.upper())
         data.append(line)
 
     align_cols = [header.index(weight_header)]
