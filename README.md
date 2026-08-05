@@ -28,12 +28,26 @@ Whatever the underlying library supports at the time of installation:
 
 Requires Python 3.11+.
 
+### Quick install
+
 ```bash
-python3 -m venv /opt/etekcity-scale-daemon/venv
-/opt/etekcity-scale-daemon/venv/bin/pip install etekcity-scale-daemon
+git clone https://github.com/bonelifer/etekcity-scale-daemon.git
+cd etekcity-scale-daemon
+sudo ./install.sh
 ```
 
-### Config file
+This creates a venv at `/opt/etekcity-scale-daemon`, installs the package from the checkout, seeds `/etc/etekcity-scale-daemon/config.ini` (if it doesn't already exist), creates an `etekcity-scale-daemon` system user, and installs and enables the systemd service. It's safe to re-run — it skips steps that are already done. Edit the config and `sudo systemctl restart etekcity-scale-daemon` afterward.
+
+### Manual install
+
+If you'd rather do it by hand or want to customize a step:
+
+```bash
+python3 -m venv /opt/etekcity-scale-daemon/venv
+/opt/etekcity-scale-daemon/venv/bin/pip install /path/to/etekcity-scale-daemon  # this checkout
+```
+
+#### Config file
 
 Copy the example config and edit it:
 
@@ -54,13 +68,22 @@ Leave `[scale] address` and `model` empty to auto-discover a scale on first run 
 | `scale` | `cooldown_seconds` | Seconds to ignore advertisements after a disconnect (GATT-based scales only). |
 | `storage` | `db_path` | Path to the SQLite database file. |
 | `daemon` | `log_level` | `DEBUG`, `INFO`, `WARNING`, or `ERROR`. |
+| `report` | `layout` | PDF layout: `full` (one row per reading) or `simple` (date/weight only, in side-by-side columns). |
+| `report` | `include_address` | Show the Address column in the `full` layout: `yes` or `no`. |
+| `report` | `include_model` | Show the Model column in the `full` layout: `yes` or `no`. |
+| `report` | `include_impedance` | Show the Impedance column in the `full` layout: `yes` or `no`. |
+| `report` | `weight_unit` | Unit to render the Weight column in: `kg`, `lb`, or `st`. |
+| `report` | `date_format` | `us` (MM/DD/YYYY, 12-hour) or `world` (DD/MM/YYYY, 24-hour). |
+| `patient` | `name` | Patient name printed below the title in PDF reports. Leave blank to omit. |
+| `patient` | `email` | Patient email printed below the title in PDF reports. Leave blank to omit. |
 
-### systemd service
+#### systemd service
 
 ```bash
 sudo useradd --system --no-create-home --group etekcity-scale-daemon
 sudo cp systemd/etekcity-scale-daemon.service /etc/systemd/system/
 sudo ln -s /opt/etekcity-scale-daemon/venv/bin/etekcity-scale-daemon /usr/bin/etekcity-scale-daemon
+sudo ln -s /opt/etekcity-scale-daemon/venv/bin/etekcity-scale-report /usr/bin/etekcity-scale-report
 sudo systemctl daemon-reload
 sudo systemctl enable --now etekcity-scale-daemon
 ```
@@ -94,6 +117,34 @@ Each measurement is inserted as one row into the `measurements` table:
 | `display_unit` | TEXT | Scale's displayed unit at time of reading |
 
 Query it directly with `sqlite3`, or point any BI/graphing tool at the file.
+
+## PDF reports
+
+`etekcity-scale-report` reads the database and writes a table of readings to a PDF file:
+
+```bash
+# Every reading on record
+etekcity-scale-report --config /etc/etekcity-scale-daemon/config.ini --output report.pdf
+
+# Preset ranges: 7d, 30d, 90d, 1y, all (default: all)
+etekcity-scale-report --config /etc/etekcity-scale-daemon/config.ini --period 30d --output last-30-days.pdf
+
+# Explicit date range (--to defaults to now if omitted)
+etekcity-scale-report --config /etc/etekcity-scale-daemon/config.ini --from 2026-01-01 --to 2026-03-31 --output q1.pdf
+
+# Point directly at a database file instead of a config
+etekcity-scale-report --db /var/lib/etekcity-scale-daemon/measurements.db --output report.pdf
+```
+
+Add `--address AA:BB:CC:DD:EE:FF` to restrict the report to one scale if the database has readings from more than one.
+
+The layout, which columns appear, the weight unit, and the date/time format are all controlled by the `[report]` section of the config file (see the table above) — `--config` reads them, `--db` always uses the defaults (`full` layout, all columns, kilograms, `world` date format).
+
+The `simple` layout drops every column except Date/Time and Weight and lays readings out in several side-by-side column pairs (filling one pair top-to-bottom before starting the next) instead of a single narrow two-column table.
+
+See [samples/](samples/) for a rendered PDF of every layout/unit/date-format combination.
+
+Set `[patient] name` and/or `email` (only read from `--config`, not `--db`) to print that identifying info below the title — handy when handing a report to a doctor. Leave either blank to omit it; leave both blank and no patient line is printed at all.
 
 ## Troubleshooting
 
