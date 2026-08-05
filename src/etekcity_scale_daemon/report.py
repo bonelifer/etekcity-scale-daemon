@@ -295,6 +295,32 @@ def _build_simple_table(rows: list[ReportRow], report_config: ReportConfig) -> T
     return table
 
 
+def _summary_line(rows: list[ReportRow], report_config: ReportConfig) -> str | None:
+    """Build a min/max/average/net-change summary line for the Weight column.
+
+    Args:
+        rows: Measurement rows to include, oldest first.
+        report_config: Supplies the weight unit to render values in.
+
+    Returns:
+        The summary text, or None if no row has a weight value.
+    """
+    weight_factor, weight_label = _WEIGHT_CONVERSIONS[report_config.weight_unit]
+    values = [
+        row.weight_kg * weight_factor for row in rows if row.weight_kg is not None
+    ]
+    if not values:
+        return None
+
+    net_change = values[-1] - values[0]
+    return (
+        f"Weight summary: min {min(values):.2f} {weight_label} &middot; "
+        f"max {max(values):.2f} {weight_label} &middot; "
+        f"avg {sum(values) / len(values):.2f} {weight_label} &middot; "
+        f"net change {net_change:+.2f} {weight_label} (oldest &rarr; newest)"
+    )
+
+
 def build_pdf(
     rows: list[ReportRow],
     output_path: str,
@@ -307,7 +333,8 @@ def build_pdf(
         rows: Measurement rows to include, oldest first.
         output_path: Filesystem path to write the PDF to.
         report_config: Controls the layout, which columns are shown, the
-            weight unit, and the date/time format.
+            weight unit, the date/time format, the page size, and whether
+            a min/max/average/net-change summary line is printed.
         patient_config: Optional patient name/email to print below the
             title; fields left blank are omitted.
     """
@@ -325,6 +352,10 @@ def build_pdf(
         elements.append(Paragraph(f"Patient: {escape(patient_config.name)}", styles["Normal"]))
     if patient_config.email:
         elements.append(Paragraph(f"Email: {escape(patient_config.email)}", styles["Normal"]))
+    if report_config.include_summary:
+        summary = _summary_line(rows, report_config)
+        if summary:
+            elements.append(Paragraph(summary, styles["Normal"]))
     elements.append(Spacer(1, 0.25 * inch))
 
     if report_config.layout == "simple":

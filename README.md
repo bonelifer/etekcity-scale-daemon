@@ -76,6 +76,7 @@ Leave `[scale] address` and `model` empty to auto-discover a scale on first run 
 | `report` | `weight_unit` | Unit to render the Weight column in: `kg`, `lb`, or `st`. |
 | `report` | `date_format` | `us` (MM/DD/YYYY, 12-hour) or `world` (DD/MM/YYYY, 24-hour). |
 | `report` | `page_size` | PDF page size: `letter` or `a4`. |
+| `report` | `include_summary` | Print a min/max/average/net-change summary line for Weight below the title: `yes` or `no`. Defaults to `no`. |
 | `patient` | `name` | Patient name printed below the title in PDF reports. Leave blank to omit. |
 | `patient` | `email` | Patient email printed below the title in PDF reports. Leave blank to omit. |
 

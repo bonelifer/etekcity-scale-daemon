@@ -52,6 +52,10 @@ date_format = world
 # PDF page size: letter or a4
 page_size = letter
 
+# Print a min/max/average/net-change summary line for the Weight column
+# below the title. Defaults to no.
+include_summary = no
+
 [patient]
 # Optional patient name/email printed below the title in PDF reports, e.g.
 # for handing a report to a doctor. Leave either blank to omit that line.
