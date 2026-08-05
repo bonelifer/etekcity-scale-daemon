@@ -28,12 +28,26 @@ Whatever the underlying library supports at the time of installation:
 
 Requires Python 3.11+.
 
+### Quick install
+
 ```bash
-python3 -m venv /opt/etekcity-scale-daemon/venv
-/opt/etekcity-scale-daemon/venv/bin/pip install etekcity-scale-daemon
+git clone https://github.com/bonelifer/etekcity-scale-daemon.git
+cd etekcity-scale-daemon
+sudo ./install.sh
 ```
 
-### Config file
+This creates a venv at `/opt/etekcity-scale-daemon`, installs the package from the checkout, seeds `/etc/etekcity-scale-daemon/config.ini` (if it doesn't already exist), creates an `etekcity-scale-daemon` system user, and installs and enables the systemd service. It's safe to re-run — it skips steps that are already done. Edit the config and `sudo systemctl restart etekcity-scale-daemon` afterward.
+
+### Manual install
+
+If you'd rather do it by hand or want to customize a step:
+
+```bash
+python3 -m venv /opt/etekcity-scale-daemon/venv
+/opt/etekcity-scale-daemon/venv/bin/pip install /path/to/etekcity-scale-daemon  # this checkout
+```
+
+#### Config file
 
 Copy the example config and edit it:
 
@@ -63,12 +77,13 @@ Leave `[scale] address` and `model` empty to auto-discover a scale on first run 
 | `patient` | `name` | Patient name printed below the title in PDF reports. Leave blank to omit. |
 | `patient` | `email` | Patient email printed below the title in PDF reports. Leave blank to omit. |
 
-### systemd service
+#### systemd service
 
 ```bash
 sudo useradd --system --no-create-home --group etekcity-scale-daemon
 sudo cp systemd/etekcity-scale-daemon.service /etc/systemd/system/
 sudo ln -s /opt/etekcity-scale-daemon/venv/bin/etekcity-scale-daemon /usr/bin/etekcity-scale-daemon
+sudo ln -s /opt/etekcity-scale-daemon/venv/bin/etekcity-scale-report /usr/bin/etekcity-scale-report
 sudo systemctl daemon-reload
 sudo systemctl enable --now etekcity-scale-daemon
 ```

@@ -14,6 +14,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+from ._version import __version__
 from .config import (
     DEFAULT_PATIENT_CONFIG,
     DEFAULT_REPORT_CONFIG,
@@ -326,6 +327,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         description=(
             "Generate a PDF table report from the daemon's measurement database."
         ),
+    )
+    parser.add_argument(
+        "-V",
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument(
