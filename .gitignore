@@ -13,3 +13,6 @@ config/etekcity-scale-daemon.ini
 *.db
 *.db-journal
 *.log
+
+# Generated sample report PDFs, not source-controlled
+samples/
