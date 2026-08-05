@@ -202,6 +202,14 @@ Contributions are welcome!
 - **Everything else** (questions, feature requests, ideas, general discussion): [Use Discussions](https://github.com/bonelifer/etekcity-scale-daemon/discussions).
 - Pull requests are welcome for bug fixes or discussed features.
 
+CI (`.github/workflows/ci.yml`) runs `flake8` and `scripts/smoke-test.sh` on every PR. Run them locally before pushing:
+
+```bash
+pip install flake8
+flake8 --config .flake8 src
+./scripts/smoke-test.sh
+```
+
 ## License
 
 This project is licensed under the **GNU General Public License v3.0**.
