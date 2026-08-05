@@ -87,6 +87,7 @@ sudo useradd --system --no-create-home --group etekcity-scale-daemon
 sudo cp systemd/etekcity-scale-daemon.service /etc/systemd/system/
 sudo ln -s /opt/etekcity-scale-daemon/venv/bin/etekcity-scale-daemon /usr/bin/etekcity-scale-daemon
 sudo ln -s /opt/etekcity-scale-daemon/venv/bin/etekcity-scale-report /usr/bin/etekcity-scale-report
+sudo ln -s /opt/etekcity-scale-daemon/venv/bin/etekcity-scale-prune /usr/bin/etekcity-scale-prune
 sudo systemctl daemon-reload
 sudo systemctl enable --now etekcity-scale-daemon
 ```
@@ -162,6 +163,20 @@ The `simple` layout drops every column except Date/Time and Weight and lays read
 See [samples/](samples/) for a rendered PDF of every layout/unit/date-format combination.
 
 Set `[patient] name` and/or `email` (only read from `--config`, not `--db`) to print that identifying info below the title — handy when handing a report to a doctor. Leave either blank to omit it; leave both blank and no patient line is printed at all.
+
+## Pruning old data
+
+`etekcity-scale-prune` deletes measurements older than a given number of days. It's manual only — nothing in the daemon deletes data automatically. It's a **dry run by default**: it reports how many rows match without touching anything, until you pass `--yes`.
+
+```bash
+# See how many readings older than 365 days would be deleted
+etekcity-scale-prune --config /etc/etekcity-scale-daemon/config.ini --older-than 365
+
+# Actually delete them (also reclaims disk space with VACUUM)
+etekcity-scale-prune --config /etc/etekcity-scale-daemon/config.ini --older-than 365 --yes
+```
+
+Add `--address AA:BB:CC:DD:EE:FF` to restrict pruning to one scale. `--db` works the same as with `etekcity-scale-report`, bypassing the config file.
 
 ## Troubleshooting
 
