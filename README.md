@@ -72,6 +72,7 @@ Leave `[scale] address` and `model` empty to auto-discover a scale on first run 
 | `report` | `include_address` | Show the Address column in the `full` layout: `yes` or `no`. |
 | `report` | `include_model` | Show the Model column in the `full` layout: `yes` or `no`. |
 | `report` | `include_impedance` | Show the Impedance column in the `full` layout: `yes` or `no`. |
+| `report` | `include_heart_rate` | Show the Heart Rate column in the `full` layout: `yes` or `no`. Only EFS-A591S reports heart rate; defaults to `no`. |
 | `report` | `weight_unit` | Unit to render the Weight column in: `kg`, `lb`, or `st`. |
 | `report` | `date_format` | `us` (MM/DD/YYYY, 12-hour) or `world` (DD/MM/YYYY, 24-hour). |
 | `patient` | `name` | Patient name printed below the title in PDF reports. Leave blank to omit. |
