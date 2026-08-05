@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import letter
+from reportlab.lib.pagesizes import A4, letter
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
@@ -38,6 +38,11 @@ _WEIGHT_CONVERSIONS = {
     "kg": (1.0, "kg"),
     "lb": (2.2046226218487757, "lb"),
     "st": (0.15747304441776975, "st"),
+}
+
+_PAGE_SIZES = {
+    "letter": letter,
+    "a4": A4,
 }
 
 # Date/time strftime patterns for each date_format preset.
@@ -307,7 +312,7 @@ def build_pdf(
             title; fields left blank are omitted.
     """
     styles = getSampleStyleSheet()
-    doc = SimpleDocTemplate(output_path, pagesize=letter)
+    doc = SimpleDocTemplate(output_path, pagesize=_PAGE_SIZES[report_config.page_size])
     elements = [
         Paragraph("Etekcity Scale Measurement Report", styles["Title"]),
         Paragraph(
