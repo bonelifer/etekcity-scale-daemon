@@ -26,6 +26,9 @@ jobs:
 
   docker-build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
 
@@ -65,3 +68,20 @@ jobs:
             etekcity-scale-daemon:ci \
             --config /etc/etekcity-scale-daemon/config.ini --output /etc/etekcity-scale-daemon/report.pdf
           test -s /tmp/docker-fixture/report.pdf
+
+      # Only publishes on pushes to main -- a PR's CI run builds and smoke
+      # tests the image (above) but never reaches these steps, since
+      # github.event_name is "pull_request" there, not "push".
+      - name: Log in to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Tag and push image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          owner="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          image="ghcr.io/${owner}/etekcity-scale-daemon"
+          docker tag etekcity-scale-daemon:ci "${image}:latest"
+          docker tag etekcity-scale-daemon:ci "${image}:${{ github.sha }}"
+          docker push "${image}:latest"
+          docker push "${image}:${{ github.sha }}"
