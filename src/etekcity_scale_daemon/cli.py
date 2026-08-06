@@ -89,11 +89,23 @@ def _measurement_to_row(
     }
 
 
-async def run_daemon(config: DaemonConfig) -> None:
+async def run_daemon(
+    config: DaemonConfig, once: bool = False, once_timeout: int = 60
+) -> bool:
     """Connect to the configured (or newly discovered) scale and log measurements.
 
     Args:
         config: Loaded daemon configuration.
+        once: If True, exit after recording a single measurement (or after
+            ``once_timeout`` seconds without one) instead of running until a
+            stop signal -- for cron-driven polling instead of a long-running
+            service.
+        once_timeout: Seconds to wait for one measurement before giving up.
+            Only used when ``once`` is True.
+
+    Returns:
+        True if at least one measurement was recorded. Always True for a
+        normal (non-``once``) run, which only returns via a stop signal.
 
     Raises:
         ConfigError: If the config names an unrecognized scale model.
@@ -102,7 +114,8 @@ async def run_daemon(config: DaemonConfig) -> None:
     model_value = config.model
 
     if not address or not model_value:
-        address, model = await discover_scale(config.adapter or None)
+        discovery_timeout = float(once_timeout) if once else 60.0
+        address, model = await discover_scale(config.adapter or None, discovery_timeout)
         model_value = model.value
         persist_discovered_scale(config.config_path, address, model_value)
         _LOGGER.info(
@@ -124,15 +137,22 @@ async def run_daemon(config: DaemonConfig) -> None:
         else BluetoothScanningMode.ACTIVE
     )
 
+    stop_event = asyncio.Event()
+    measurement_received = False
+
     def on_measurement(data: ScaleData) -> None:
+        nonlocal measurement_received
         row = _measurement_to_row(data, address, model_value)
         store.record(**row)
+        measurement_received = True
         _LOGGER.info(
             "Recorded measurement from %s: weight=%s kg impedance=%s",
             address,
             row["weight_kg"],
             row["impedance_ohms"],
         )
+        if once:
+            stop_event.set()
 
     scale_kwargs: dict[str, object] = {"scanning_mode": scanning_mode}
     if config.adapter:
@@ -142,24 +162,34 @@ async def run_daemon(config: DaemonConfig) -> None:
 
     scale = SCALE_CLASSES[model](address, on_measurement, **scale_kwargs)
 
-    stop_event = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop_event.set)
 
     _LOGGER.info(
-        "Starting etekcity-scale-daemon %s for %s scale at %s",
+        "Starting etekcity-scale-daemon %s for %s scale at %s%s",
         __version__,
         model_value,
         address,
+        f" (once, {once_timeout}s timeout)" if once else "",
     )
     await scale.async_start()
     try:
-        await stop_event.wait()
+        if once:
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=once_timeout)
+            except TimeoutError:
+                _LOGGER.warning(
+                    "No measurement received within %s seconds", once_timeout
+                )
+        else:
+            await stop_event.wait()
     finally:
         _LOGGER.info("Shutting down")
         await scale.async_stop()
         store.close()
+
+    return measurement_received
 
 
 def _check_config(config_path: str) -> int:
@@ -248,6 +278,24 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Enable debug logging (overrides the config file's log level)",
     )
     parser.add_argument(
+        "-o",
+        "--once",
+        action="store_true",
+        help=(
+            "Record one measurement and exit, instead of running until "
+            "stopped (for cron-driven polling instead of a long-running service)"
+        ),
+    )
+    parser.add_argument(
+        "-w",
+        "--once-timeout",
+        dest="once_timeout",
+        type=int,
+        default=60,
+        metavar="SECONDS",
+        help="Seconds to wait for a measurement in --once mode (default: %(default)s)",
+    )
+    parser.add_argument(
         "-V",
         "--version",
         action="version",
@@ -284,12 +332,17 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     try:
-        asyncio.run(run_daemon(config))
+        measurement_received = asyncio.run(
+            run_daemon(config, once=args.once, once_timeout=args.once_timeout)
+        )
     except (TimeoutError, ConfigError) as exc:
         _LOGGER.error(str(exc))
         return 1
     except KeyboardInterrupt:
-        pass
+        return 0
+
+    if args.once and not measurement_received:
+        return 1
     return 0
 
 
