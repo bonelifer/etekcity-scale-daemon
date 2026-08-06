@@ -14,36 +14,7 @@ echo "==> Installing package from ${REPO_DIR}"
 pip install --quiet "${REPO_DIR}"
 
 echo "==> Creating fixture database and config"
-python3 - "${WORKDIR}/measurements.db" <<'EOF'
-import sqlite3
-import sys
-from datetime import datetime, timezone
-
-con = sqlite3.connect(sys.argv[1])
-con.execute(
-    """
-    CREATE TABLE measurements (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        recorded_at TEXT NOT NULL,
-        address TEXT NOT NULL,
-        model TEXT NOT NULL,
-        weight_kg REAL,
-        impedance_ohms REAL,
-        impedance_500khz_ohms REAL,
-        heart_rate_bpm REAL,
-        display_unit TEXT
-    )
-    """
-)
-con.execute(
-    "INSERT INTO measurements "
-    "(recorded_at, address, model, weight_kg, impedance_ohms, display_unit) "
-    "VALUES (?, ?, ?, ?, ?, ?)",
-    (datetime.now(timezone.utc).isoformat(), "AA:BB:CC:DD:EE:FF", "ESF-551", 80.0, 500.0, "KG"),
-)
-con.commit()
-con.close()
-EOF
+python3 "${REPO_DIR}/scripts/make-fixture-db.py" "${WORKDIR}/measurements.db"
 
 cat > "${WORKDIR}/config.ini" <<EOF
 [scale]
