@@ -101,6 +101,12 @@ Leave `[scale] address` and `model` empty to auto-discover a scale on first run 
 | `api` | `host` | Bind address. Defaults to `127.0.0.1` (loopback only). |
 | `api` | `port` | Bind port. Defaults to `8080`. |
 | `api` | `token` | Optional bearer token required on all endpoints except `/health`. Blank means no auth. |
+| `profiles` | `enabled` | Ask "who was this?" for a shared scale: `yes` or `no`. Defaults to `no`. |
+| `profiles` | `names` | Comma-separated list of names to choose between. Required if `enabled = yes`. |
+| `profiles` | `ntfy_url` | ntfy topic URL, e.g. `https://ntfy.sh/your-topic`. Required if `enabled = yes` and `[api] enabled = yes`. |
+| `profiles` | `ntfy_token` | Optional ntfy access token. |
+| `profiles` | `api_base_url` | Where this API is reachable, for ntfy's action buttons to call back into. |
+| `profiles` | `dunstify_timeout_seconds` | Seconds to wait for a local dunstify response. Only used when `[api] enabled = no`. Defaults to `30`. |
 
 #### systemd service
 
@@ -211,6 +217,31 @@ curl -o report.pdf "http://127.0.0.1:8080/report?period=30d"
 ```bash
 curl -H "Authorization: Bearer <token>" http://127.0.0.1:8080/latest
 ```
+
+### Profiles
+
+For a scale shared by more than one person: `[profiles]` asks "who was this?" after each reading and tags it, so reports and body-metrics calculations (which assume one person, see the body-composition note above) can eventually be filtered per person. There's no way to identify who's standing on the scale automatically -- no camera, no button, nothing but a weight number -- so this asks a human directly instead of guessing from a weight range.
+
+Two delivery paths, chosen automatically based on whether `[api]` is enabled:
+
+- **`[api]` enabled** -- an [ntfy](https://ntfy.sh) notification with one HTTP action button per name in `profiles.names`. Tapping a button hits this API's `/assign-profile` endpoint directly, tagging that specific reading. Requires `profiles.ntfy_url` (and `profiles.api_base_url` pointing at wherever the API is actually reachable from your phone/desktop -- `127.0.0.1` only works if ntfy and the API run on the same machine).
+- **`[api]` disabled** -- a local [dunstify](https://dunst-project.org) prompt instead, since ntfy's action buttons would have nothing to call back to without the API running. This resolves synchronously and tags the reading directly, no network round-trip. It needs the `dunst` notification daemon and a real desktop/D-Bus session -- it will not reach anywhere from a headless system service with no logged-in session, which is how the daemon runs by default.
+
+```ini
+[profiles]
+enabled = yes
+names = Alice, Bob
+ntfy_url = https://ntfy.sh/your-topic
+api_base_url = http://127.0.0.1:8080
+```
+
+`/assign-profile` also accepts manual tagging or correcting a mistake:
+
+```bash
+curl "http://127.0.0.1:8080/assign-profile?id=42&profile=Alice"
+```
+
+Why ntfy specifically: unlike most notification services, ntfy's `http` action type is a full HTTP request (URL, method, headers, body) fired directly when the button is tapped -- the notification service itself is the callback mechanism, no separate bot or polling process needed. Pushover only supports a single acknowledge callback tied to emergency-priority alerts, Pushbullet's actionable notifications are about mirroring your own devices rather than third-party callbacks, and Gotify has no equivalent at all. [Apprise](https://github.com/caronc/apprise) (used for [alerting](#alerting)) isn't used here either -- its unified API has no concept of actions since it targets 100+ services and most have nothing like this.
 
 ### Docker
 

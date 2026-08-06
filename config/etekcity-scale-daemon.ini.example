@@ -128,3 +128,29 @@ port = 8080
 # "Authorization: Bearer <token>" header. Leave blank for no auth (fine
 # for loopback-only use).
 token =
+
+[profiles]
+# Ask "who was this?" for each reading, for a scale shared by more than
+# one person. Defaults to no. Two delivery paths, chosen automatically:
+#   - If [api] is enabled: an ntfy notification with one HTTP action
+#     button per name below, each calling back into this API's
+#     /assign-profile endpoint when tapped. Needs ntfy_url set.
+#   - If [api] is disabled: a local dunstify prompt instead, since ntfy's
+#     action buttons would have nothing to call back to. Needs dunstify
+#     (part of the dunst notification daemon) and a real desktop/D-Bus
+#     session -- this won't reach anywhere from a headless system service
+#     without one.
+enabled = no
+# Comma-separated list of names to choose between.
+names =
+# Required only when [api] is enabled: an ntfy topic URL, e.g.
+# https://ntfy.sh/your-topic or a self-hosted https://ntfy.example.com/your-topic.
+ntfy_url =
+# Optional access token, if your ntfy server/topic requires auth.
+ntfy_token =
+# Where this API is reachable, for the ntfy action buttons to call back
+# into. Only used when [api] is enabled.
+api_base_url = http://127.0.0.1:8080
+# Seconds to wait for a dunstify response before giving up. Only used
+# when [api] is disabled.
+dunstify_timeout_seconds = 30

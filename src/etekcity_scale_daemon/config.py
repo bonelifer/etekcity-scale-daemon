@@ -143,6 +143,35 @@ class ApiConfig:
 DEFAULT_API_CONFIG = ApiConfig(enabled=False, host="127.0.0.1", port=8080, token="")
 
 
+@dataclass
+class ProfilesConfig:
+    """Parsed [profiles] section: who-was-this tagging for shared scales.
+
+    When the HTTP API is enabled, a new reading is announced via an ntfy
+    notification with one HTTP action button per profile, each calling back
+    into the API to tag the reading. When the API is disabled, there's
+    nothing for ntfy's action buttons to call back to, so a local dunstify
+    prompt is used instead, which resolves synchronously in-process.
+    """
+
+    enabled: bool
+    names: list[str]
+    ntfy_url: str
+    ntfy_token: str
+    api_base_url: str
+    dunstify_timeout_seconds: int
+
+
+DEFAULT_PROFILES_CONFIG = ProfilesConfig(
+    enabled=False,
+    names=[],
+    ntfy_url="",
+    ntfy_token="",
+    api_base_url="http://127.0.0.1:8080",
+    dunstify_timeout_seconds=30,
+)
+
+
 def _parse_bool(value: str, key: str) -> bool:
     """Parse a yes/no-style config value.
 
@@ -502,6 +531,66 @@ def load_api_config(config_path: str) -> ApiConfig:
         host=api.get("host", DEFAULT_API_CONFIG.host).strip() or DEFAULT_API_CONFIG.host,
         port=port,
         token=api.get("token", "").strip(),
+    )
+
+
+def load_profiles_config(config_path: str) -> ProfilesConfig:
+    """Load the ``[profiles]`` section of the daemon config file, if present.
+
+    Note that whether the ntfy or dunstify path is actually usable also
+    depends on ``[api] enabled`` -- that cross-check happens where both
+    configs are loaded together (``etekcity-scale-daemon``'s startup),
+    not here, since this loader only sees its own section.
+
+    Args:
+        config_path: Path to the INI configuration file.
+
+    Returns:
+        The parsed profiles configuration, or ``DEFAULT_PROFILES_CONFIG``
+        (disabled) if the file has no ``[profiles]`` section.
+
+    Raises:
+        ConfigError: If the file is missing, enabled without any names, or
+            a numeric value is invalid.
+    """
+    path = Path(config_path)
+    if not path.is_file():
+        raise ConfigError(f"Config file not found: {path}")
+
+    parser = configparser.ConfigParser()
+    parser.read(path)
+
+    if not parser.has_section("profiles"):
+        return DEFAULT_PROFILES_CONFIG
+
+    profiles = parser["profiles"]
+    enabled = _parse_bool(profiles.get("enabled", "no"), "profiles.enabled")
+
+    names_raw = profiles.get("names", "").strip()
+    names = [name.strip() for name in names_raw.split(",") if name.strip()]
+    if enabled and not names:
+        raise ConfigError("profiles.names must be set when profiles.enabled = yes")
+
+    try:
+        dunstify_timeout_seconds = int(
+            profiles.get(
+                "dunstify_timeout_seconds",
+                str(DEFAULT_PROFILES_CONFIG.dunstify_timeout_seconds),
+            )
+        )
+    except ValueError as exc:
+        raise ConfigError("profiles.dunstify_timeout_seconds must be an integer") from exc
+
+    return ProfilesConfig(
+        enabled=enabled,
+        names=names,
+        ntfy_url=profiles.get("ntfy_url", "").strip(),
+        ntfy_token=profiles.get("ntfy_token", "").strip(),
+        api_base_url=(
+            profiles.get("api_base_url", DEFAULT_PROFILES_CONFIG.api_base_url).strip()
+            or DEFAULT_PROFILES_CONFIG.api_base_url
+        ),
+        dunstify_timeout_seconds=dunstify_timeout_seconds,
     )
 
 

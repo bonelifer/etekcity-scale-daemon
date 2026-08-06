@@ -22,9 +22,11 @@ from .config import (
     load_api_config,
     load_config,
     load_patient_config,
+    load_profiles_config,
     load_report_config,
 )
 from .report import _resolve_range, build_csv, build_pdf, fetch_rows
+from .storage import ensure_schema, set_measurement_profile
 
 _VALID_FORMATS = ("pdf", "csv")
 _VALID_PERIODS = ("7d", "30d", "90d", "1y", "all")
@@ -42,8 +44,8 @@ def _latest_readings(db_path: str, address: str | None) -> list[dict[str, object
         database.
     """
     query = (
-        "SELECT recorded_at, address, model, weight_kg, impedance_ohms, "
-        "impedance_500khz_ohms, heart_rate_bpm, display_unit FROM measurements m1 "
+        "SELECT id, recorded_at, address, model, weight_kg, impedance_ohms, "
+        "impedance_500khz_ohms, heart_rate_bpm, display_unit, profile FROM measurements m1 "
         "WHERE recorded_at = ("
         "    SELECT MAX(recorded_at) FROM measurements m2 WHERE m2.address = m1.address"
         ")"
@@ -61,14 +63,16 @@ def _latest_readings(db_path: str, address: str | None) -> list[dict[str, object
 
     return [
         {
-            "recorded_at": row[0],
-            "address": row[1],
-            "model": row[2],
-            "weight_kg": row[3],
-            "impedance_ohms": row[4],
-            "impedance_500khz_ohms": row[5],
-            "heart_rate_bpm": row[6],
-            "display_unit": row[7],
+            "id": row[0],
+            "recorded_at": row[1],
+            "address": row[2],
+            "model": row[3],
+            "weight_kg": row[4],
+            "impedance_ohms": row[5],
+            "impedance_500khz_ohms": row[6],
+            "heart_rate_bpm": row[7],
+            "display_unit": row[8],
+            "profile": row[9],
         }
         for row in rows
     ]
@@ -108,6 +112,36 @@ async def handle_latest(request: web.Request) -> web.Response:
     if not readings:
         return web.json_response({"error": "no readings found"}, status=404)
     return web.json_response(readings)
+
+
+async def handle_assign_profile(request: web.Request) -> web.Response:
+    """POST /assign-profile?id=...&profile=... -- tag a reading, e.g. from an ntfy action.
+
+    Accepts GET too, since notification action buttons (ntfy's http action
+    in particular) are simplest to configure as a bare URL hit rather than
+    a POST with a body.
+    """
+    unauthorized = _require_auth(request)
+    if unauthorized is not None:
+        return unauthorized
+
+    profiles_config = request.app["profiles_config"]
+    profile = request.query.get("profile", "")
+    if profile not in profiles_config.names:
+        return web.json_response(
+            {"error": f"profile must be one of {profiles_config.names}"}, status=400
+        )
+
+    row_id_raw = request.query.get("id", "")
+    try:
+        row_id = int(row_id_raw)
+    except ValueError:
+        return web.json_response({"error": "id must be an integer"}, status=400)
+
+    updated = set_measurement_profile(request.app["db_path"], row_id, profile)
+    if not updated:
+        return web.json_response({"error": f"no reading with id {row_id}"}, status=404)
+    return web.json_response({"status": "ok", "id": row_id, "profile": profile})
 
 
 async def handle_report(request: web.Request) -> web.Response:
@@ -174,7 +208,7 @@ async def handle_report(request: web.Request) -> web.Response:
 
 
 def build_app(
-    db_path: str, api_config: ApiConfig, report_config, patient_config
+    db_path: str, api_config: ApiConfig, report_config, patient_config, profiles_config
 ) -> web.Application:
     """Build the aiohttp application with routes and shared state attached.
 
@@ -183,6 +217,7 @@ def build_app(
         api_config: Supplies the auth token.
         report_config: Used for on-demand report generation.
         patient_config: Used for on-demand PDF report generation.
+        profiles_config: Supplies the valid profile names for /assign-profile.
 
     Returns:
         A configured, unstarted aiohttp Application.
@@ -192,9 +227,12 @@ def build_app(
     app["api_token"] = api_config.token
     app["report_config"] = report_config
     app["patient_config"] = patient_config
+    app["profiles_config"] = profiles_config
     app.router.add_get("/health", handle_health)
     app.router.add_get("/latest", handle_latest)
     app.router.add_get("/report", handle_report)
+    app.router.add_get("/assign-profile", handle_assign_profile)
+    app.router.add_post("/assign-profile", handle_assign_profile)
     return app
 
 
@@ -233,6 +271,7 @@ def main(argv: list[str] | None = None) -> int:
         api_config = load_api_config(args.config)
         report_config = load_report_config(args.config)
         patient_config = load_patient_config(args.config)
+        profiles_config = load_profiles_config(args.config)
     except ConfigError as exc:
         print(f"Error: {exc}")
         return 1
@@ -241,7 +280,8 @@ def main(argv: list[str] | None = None) -> int:
         print("API is disabled (api.enabled = no).")
         return 0
 
-    app = build_app(db_path, api_config, report_config, patient_config)
+    ensure_schema(db_path)
+    app = build_app(db_path, api_config, report_config, patient_config, profiles_config)
     print(f"Listening on http://{api_config.host}:{api_config.port}")
     web.run_app(app, host=api_config.host, port=api_config.port, print=None)
     return 0

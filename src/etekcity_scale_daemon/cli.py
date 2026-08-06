@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+import aiohttp
 import aiomqtt
 from bleak import BleakScanner
 from etekcity_esf551_ble import (
@@ -28,19 +29,24 @@ from etekcity_esf551_ble import (
 
 from ._version import __version__
 from .config import (
+    DEFAULT_API_CONFIG,
     DEFAULT_MQTT_CONFIG,
+    DEFAULT_PROFILES_CONFIG,
+    ApiConfig,
     ConfigError,
     DaemonConfig,
     MqttConfig,
+    ProfilesConfig,
     load_alert_config,
     load_api_config,
     load_config,
     load_mqtt_config,
     load_patient_config,
+    load_profiles_config,
     load_report_config,
     persist_discovered_scale,
 )
-from .storage import MeasurementStore
+from .storage import MeasurementStore, set_measurement_profile
 
 _LOGGER = logging.getLogger("etekcity_scale_daemon")
 
@@ -164,11 +170,137 @@ async def _publish_measurement(
         _LOGGER.warning("MQTT publish to %s failed: %s", topic, exc)
 
 
+async def _notify_via_ntfy(
+    row_id: int, weight_kg: float | None, profiles_config: ProfilesConfig
+) -> None:
+    """Announce a new reading via ntfy, with one HTTP action button per profile.
+
+    Each action calls back into the local HTTP API's ``/assign-profile``
+    endpoint when tapped, so the actual tagging happens later (whenever a
+    human responds), not here.
+
+    Args:
+        row_id: The measurement's primary key, to tag once a profile is chosen.
+        weight_kg: The recorded weight, for the notification body.
+        profiles_config: Supplies the profile names, ntfy target, and the
+            API base URL the action buttons call back into.
+    """
+    callback_base = f"{profiles_config.api_base_url}/assign-profile"
+    headers = {}
+    if profiles_config.ntfy_token:
+        headers["Authorization"] = f"Bearer {profiles_config.ntfy_token}"
+
+    # JSON publishing requires POSTing to the server's root URL with the
+    # topic in the body, not to <server>/<topic> like a plain-text publish.
+    clean_url = profiles_config.ntfy_url.rstrip("/")
+    ntfy_root, _, topic = clean_url.rpartition("/")
+    if not ntfy_root:
+        ntfy_root = clean_url
+
+    weight_text = f"{weight_kg:.2f} kg" if weight_kg is not None else "unknown weight"
+    payload = {
+        "topic": topic,
+        "title": "New scale reading",
+        "message": f"{weight_text} -- who was this?",
+        "actions": [
+            {
+                "action": "http",
+                "label": name,
+                "url": f"{callback_base}?id={row_id}&profile={name}",
+                "method": "POST",
+                "clear": True,
+            }
+            for name in profiles_config.names
+        ],
+    }
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(ntfy_root, json=payload, headers=headers) as response:
+                if response.status >= 400:
+                    _LOGGER.warning(
+                        "ntfy publish failed with HTTP %s: %s",
+                        response.status,
+                        await response.text(),
+                    )
+    except aiohttp.ClientError as exc:
+        _LOGGER.warning("ntfy publish failed: %s", exc)
+
+
+async def _prompt_via_dunstify(
+    db_path: str,
+    row_id: int,
+    weight_kg: float | None,
+    profiles_config: ProfilesConfig,
+) -> None:
+    """Ask locally (via dunstify) which profile a reading belongs to.
+
+    Blocks (within this background task, not the caller) until an action is
+    chosen or the timeout elapses, then tags the row directly -- there's no
+    HTTP API to call back into in this path, so the answer is applied here.
+
+    Args:
+        db_path: Path to the SQLite database file.
+        row_id: The measurement's primary key to tag.
+        weight_kg: The recorded weight, for the notification body.
+        profiles_config: Supplies the profile names and timeout.
+    """
+    weight_text = f"{weight_kg:.2f} kg" if weight_kg is not None else "unknown weight"
+    args = ["dunstify", "-t", str(profiles_config.dunstify_timeout_seconds * 1000)]
+    for name in profiles_config.names:
+        args += ["--action", f"{name},{name}"]
+    args += ["New scale reading", f"{weight_text} -- who was this?"]
+
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL
+        )
+        stdout, _ = await asyncio.wait_for(
+            process.communicate(), timeout=profiles_config.dunstify_timeout_seconds + 5
+        )
+    except (OSError, asyncio.TimeoutError) as exc:
+        _LOGGER.warning("dunstify profile prompt failed: %s", exc)
+        return
+
+    chosen = stdout.decode().strip()
+    if chosen not in profiles_config.names:
+        _LOGGER.info("No profile chosen for reading %s (timed out or dismissed)", row_id)
+        return
+
+    if set_measurement_profile(db_path, row_id, chosen):
+        _LOGGER.info("Tagged reading %s as profile %s", row_id, chosen)
+
+
+async def _prompt_for_profile(
+    db_path: str,
+    row_id: int,
+    weight_kg: float | None,
+    profiles_config: ProfilesConfig,
+    api_config: ApiConfig,
+) -> None:
+    """Dispatch to ntfy (if the API is reachable) or dunstify (if not).
+
+    Args:
+        db_path: Path to the SQLite database file.
+        row_id: The measurement's primary key to tag.
+        weight_kg: The recorded weight, for the notification body.
+        profiles_config: Supplies profile names and per-path settings.
+        api_config: Determines which path is used -- ntfy's action buttons
+            have nothing to call back to without the API running.
+    """
+    if api_config.enabled:
+        await _notify_via_ntfy(row_id, weight_kg, profiles_config)
+    else:
+        await _prompt_via_dunstify(db_path, row_id, weight_kg, profiles_config)
+
+
 async def run_daemon(
     config: DaemonConfig,
     once: bool = False,
     once_timeout: int = 60,
     mqtt_config: MqttConfig = DEFAULT_MQTT_CONFIG,
+    profiles_config: ProfilesConfig = DEFAULT_PROFILES_CONFIG,
+    api_config: ApiConfig = DEFAULT_API_CONFIG,
 ) -> bool:
     """Connect to the configured (or newly discovered) scale and log measurements.
 
@@ -183,6 +315,11 @@ async def run_daemon(
         mqtt_config: Optional MQTT publishing configuration. If enabled,
             each measurement is also published as JSON. A broker outage is
             logged and non-fatal -- it never blocks local recording.
+        profiles_config: Optional who-was-this tagging. If enabled, each
+            measurement triggers a background notification (ntfy or
+            dunstify, chosen based on ``api_config.enabled``) asking which
+            profile it belongs to.
+        api_config: Determines which profile-notification path is used.
 
     Returns:
         True if at least one measurement was recorded. Always True for a
@@ -222,12 +359,12 @@ async def run_daemon(
     measurement_received = False
 
     async with _mqtt_connection(mqtt_config) as mqtt_client:
-        mqtt_publish_tasks: list[asyncio.Task] = []
+        background_tasks: list[asyncio.Task] = []
 
         def on_measurement(data: ScaleData) -> None:
             nonlocal measurement_received
             row = _measurement_to_row(data, address, model_value)
-            store.record(**row)
+            row_id = store.record(**row)
             measurement_received = True
             _LOGGER.info(
                 "Recorded measurement from %s: weight=%s kg impedance=%s",
@@ -236,9 +373,21 @@ async def run_daemon(
                 row["impedance_ohms"],
             )
             if mqtt_client is not None:
-                mqtt_publish_tasks.append(
+                background_tasks.append(
                     asyncio.create_task(
                         _publish_measurement(mqtt_client, mqtt_config, address, row)
+                    )
+                )
+            if profiles_config.enabled:
+                background_tasks.append(
+                    asyncio.create_task(
+                        _prompt_for_profile(
+                            config.db_path,
+                            row_id,
+                            row["weight_kg"],
+                            profiles_config,
+                            api_config,
+                        )
                     )
                 )
             if once:
@@ -277,8 +426,18 @@ async def run_daemon(
         finally:
             _LOGGER.info("Shutting down")
             await scale.async_stop()
-            if mqtt_publish_tasks:
-                await asyncio.wait(mqtt_publish_tasks, timeout=5)
+            if background_tasks:
+                # A pending dunstify prompt can legitimately take up to its
+                # configured timeout to resolve; give it that long instead
+                # of cutting it off at the same 5s used for quick MQTT
+                # publishes, especially in --once mode where the stop event
+                # fires as soon as the measurement is recorded.
+                wait_timeout = (
+                    profiles_config.dunstify_timeout_seconds + 5
+                    if profiles_config.enabled and not api_config.enabled
+                    else 5
+                )
+                await asyncio.wait(background_tasks, timeout=wait_timeout)
             store.close()
 
     return measurement_received
@@ -300,7 +459,7 @@ def _check_config(config_path: str) -> int:
 
     errors: list[str] = []
     daemon_config = report_config = patient_config = None
-    mqtt_config = alert_config = api_config = None
+    mqtt_config = alert_config = api_config = profiles_config = None
 
     try:
         daemon_config = load_config(config_path)
@@ -326,6 +485,20 @@ def _check_config(config_path: str) -> int:
         api_config = load_api_config(config_path)
     except ConfigError as exc:
         errors.append(str(exc))
+    try:
+        profiles_config = load_profiles_config(config_path)
+    except ConfigError as exc:
+        errors.append(str(exc))
+
+    if (
+        not errors
+        and profiles_config.enabled
+        and api_config.enabled
+        and not profiles_config.ntfy_url
+    ):
+        errors.append(
+            "profiles.enabled = yes with [api] enabled requires profiles.ntfy_url to be set"
+        )
 
     if errors:
         print(f"{config_path}: INVALID")
@@ -369,6 +542,12 @@ def _check_config(config_path: str) -> int:
         f"{'yes' if api_config.enabled else 'no'} "
         f"host={api_config.host} port={api_config.port} "
         f"token={'(set)' if api_config.token else '(none)'}"
+    )
+    print(
+        "  profiles: enabled="
+        f"{'yes' if profiles_config.enabled else 'no'} "
+        f"names={len(profiles_config.names)} "
+        f"path={'ntfy' if api_config.enabled else 'dunstify'}"
     )
     return 0
 
@@ -444,9 +623,18 @@ def main(argv: list[str] | None = None) -> int:
     try:
         config = load_config(args.config)
         mqtt_config = load_mqtt_config(args.config)
+        profiles_config = load_profiles_config(args.config)
+        api_config = load_api_config(args.config)
     except ConfigError as exc:
         logging.basicConfig(level=logging.ERROR)
         _LOGGER.error(str(exc))
+        return 1
+
+    if profiles_config.enabled and api_config.enabled and not profiles_config.ntfy_url:
+        logging.basicConfig(level=logging.ERROR)
+        _LOGGER.error(
+            "profiles.enabled = yes with [api] enabled requires profiles.ntfy_url to be set"
+        )
         return 1
 
     log_level = "DEBUG" if args.verbose else config.log_level
@@ -462,6 +650,8 @@ def main(argv: list[str] | None = None) -> int:
                 once=args.once,
                 once_timeout=args.once_timeout,
                 mqtt_config=mqtt_config,
+                profiles_config=profiles_config,
+                api_config=api_config,
             )
         )
     except (TimeoutError, ConfigError) as exc:
