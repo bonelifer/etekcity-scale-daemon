@@ -1,0 +1,8 @@
+[Unit]
+Description=Generate a scheduled Etekcity scale report
+
+[Service]
+Type=oneshot
+User=etekcity-scale-daemon
+Group=etekcity-scale-daemon
+ExecStart=/usr/bin/etekcity-scale-generate-report

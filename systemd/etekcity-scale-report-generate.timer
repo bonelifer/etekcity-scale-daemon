@@ -1,0 +1,9 @@
+[Unit]
+Description=Weekly Etekcity scale report generation
+
+[Timer]
+OnCalendar=weekly
+Persistent=true
+
+[Install]
+WantedBy=timers.target
