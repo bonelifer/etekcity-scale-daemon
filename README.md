@@ -36,7 +36,7 @@ cd etekcity-scale-daemon
 sudo ./install.sh
 ```
 
-This creates a venv at `/opt/etekcity-scale-daemon`, installs the package from the checkout, seeds `/etc/etekcity-scale-daemon/config.ini` (if it doesn't already exist), creates an `etekcity-scale-daemon` system user, and installs and enables the systemd service. It's safe to re-run — it skips steps that are already done. Edit the config and `sudo systemctl restart etekcity-scale-daemon` afterward.
+This creates a venv at `/opt/etekcity-scale-daemon`, installs the package from the checkout, seeds `/etc/etekcity-scale-daemon/config.ini` (if it doesn't already exist), creates an `etekcity-scale-daemon` system user, and installs and enables the systemd service. It also installs (but does not enable) the [scheduled report generation](#scheduled-report-generation) timer unit. It's safe to re-run — it skips steps that are already done. Edit the config and `sudo systemctl restart etekcity-scale-daemon` afterward.
 
 ### Manual install
 
@@ -93,6 +93,9 @@ sudo cp systemd/etekcity-scale-daemon.service /etc/systemd/system/
 sudo ln -s /opt/etekcity-scale-daemon/venv/bin/etekcity-scale-daemon /usr/bin/etekcity-scale-daemon
 sudo ln -s /opt/etekcity-scale-daemon/venv/bin/etekcity-scale-report /usr/bin/etekcity-scale-report
 sudo ln -s /opt/etekcity-scale-daemon/venv/bin/etekcity-scale-prune /usr/bin/etekcity-scale-prune
+sudo cp scripts/generate-scheduled-report.sh /opt/etekcity-scale-daemon/generate-scheduled-report.sh
+sudo chmod +x /opt/etekcity-scale-daemon/generate-scheduled-report.sh
+sudo ln -s /opt/etekcity-scale-daemon/generate-scheduled-report.sh /usr/bin/etekcity-scale-generate-report
 sudo systemctl daemon-reload
 sudo systemctl enable --now etekcity-scale-daemon
 ```
@@ -101,6 +104,29 @@ Watch the discovery step (first run) with:
 
 ```bash
 sudo journalctl -u etekcity-scale-daemon -f
+```
+
+### Scheduled report generation
+
+Optional and not enabled by default (`install.sh` installs the unit files but doesn't enable them). Generates a timestamped PDF to `/var/lib/etekcity-scale-daemon/reports/` on a schedule — there's no auto-email delivery, just a file dropped on disk; wire up your own delivery (e.g. a script that watches the directory) if you need that.
+
+```bash
+sudo cp systemd/etekcity-scale-report-generate.service systemd/etekcity-scale-report-generate.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now etekcity-scale-report-generate.timer
+```
+
+The timer defaults to `OnCalendar=weekly` (Monday 00:00) — edit `/etc/systemd/system/etekcity-scale-report-generate.timer` and `sudo systemctl daemon-reload` to change it. Override the config path or output directory with `ETEKCITY_CONFIG`/`ETEKCITY_REPORT_DIR` environment variables (add an `Environment=` line to the `.service` file's `[Service]` section). Check on it with:
+
+```bash
+sudo systemctl list-timers etekcity-scale-report-generate.timer
+sudo journalctl -u etekcity-scale-report-generate.service
+```
+
+Prefer cron instead of systemd timers? Skip the timer unit and add a crontab entry calling the same wrapper directly:
+
+```
+0 0 * * 1 /usr/bin/etekcity-scale-generate-report
 ```
 
 ### Docker
