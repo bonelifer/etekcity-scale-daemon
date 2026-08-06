@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import logging
 import signal
+import ssl
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+import aiomqtt
 from bleak import BleakScanner
 from etekcity_esf551_ble import (
     HEART_RATE_KEY,
@@ -24,9 +28,12 @@ from etekcity_esf551_ble import (
 
 from ._version import __version__
 from .config import (
+    DEFAULT_MQTT_CONFIG,
     ConfigError,
     DaemonConfig,
+    MqttConfig,
     load_config,
+    load_mqtt_config,
     load_patient_config,
     load_report_config,
     persist_discovered_scale,
@@ -89,8 +96,77 @@ def _measurement_to_row(
     }
 
 
+@asynccontextmanager
+async def _mqtt_connection(mqtt_config: MqttConfig):
+    """Yield a connected MQTT client, or None if disabled or unreachable.
+
+    A broker connection failure is logged and treated as non-fatal: BLE
+    scale recording to the local database is the daemon's primary job and
+    must not be blocked by an MQTT outage.
+
+    Args:
+        mqtt_config: Parsed [mqtt] configuration.
+
+    Yields:
+        A connected ``aiomqtt.Client``, or None if MQTT is disabled or the
+        broker could not be reached.
+    """
+    if not mqtt_config.enabled:
+        yield None
+        return
+
+    tls_context = ssl.create_default_context() if mqtt_config.use_tls else None
+    try:
+        async with aiomqtt.Client(
+            hostname=mqtt_config.host,
+            port=mqtt_config.port,
+            username=mqtt_config.username or None,
+            password=mqtt_config.password or None,
+            tls_context=tls_context,
+        ) as client:
+            _LOGGER.info(
+                "Connected to MQTT broker %s:%s", mqtt_config.host, mqtt_config.port
+            )
+            yield client
+    except aiomqtt.MqttError as exc:
+        _LOGGER.warning(
+            "Could not connect to MQTT broker %s:%s (%s) -- continuing without "
+            "MQTT publishing",
+            mqtt_config.host,
+            mqtt_config.port,
+            exc,
+        )
+        yield None
+
+
+async def _publish_measurement(
+    client: aiomqtt.Client, mqtt_config: MqttConfig, address: str, row: dict[str, object]
+) -> None:
+    """Publish one measurement to MQTT as a JSON payload.
+
+    Failures are logged, not raised -- a broker hiccup shouldn't be allowed
+    to propagate into the scale's notification callback.
+
+    Args:
+        client: A connected MQTT client.
+        mqtt_config: Supplies the topic prefix, QoS, and retain flag.
+        address: The scale's BLE address, used as the topic's last segment.
+        row: The measurement fields, as built by ``_measurement_to_row``.
+    """
+    topic = f"{mqtt_config.topic_prefix}/{address}/state"
+    try:
+        await client.publish(
+            topic, json.dumps(row), qos=mqtt_config.qos, retain=mqtt_config.retain
+        )
+    except aiomqtt.MqttError as exc:
+        _LOGGER.warning("MQTT publish to %s failed: %s", topic, exc)
+
+
 async def run_daemon(
-    config: DaemonConfig, once: bool = False, once_timeout: int = 60
+    config: DaemonConfig,
+    once: bool = False,
+    once_timeout: int = 60,
+    mqtt_config: MqttConfig = DEFAULT_MQTT_CONFIG,
 ) -> bool:
     """Connect to the configured (or newly discovered) scale and log measurements.
 
@@ -102,6 +178,9 @@ async def run_daemon(
             service.
         once_timeout: Seconds to wait for one measurement before giving up.
             Only used when ``once`` is True.
+        mqtt_config: Optional MQTT publishing configuration. If enabled,
+            each measurement is also published as JSON. A broker outage is
+            logged and non-fatal -- it never blocks local recording.
 
     Returns:
         True if at least one measurement was recorded. Always True for a
@@ -140,54 +219,65 @@ async def run_daemon(
     stop_event = asyncio.Event()
     measurement_received = False
 
-    def on_measurement(data: ScaleData) -> None:
-        nonlocal measurement_received
-        row = _measurement_to_row(data, address, model_value)
-        store.record(**row)
-        measurement_received = True
-        _LOGGER.info(
-            "Recorded measurement from %s: weight=%s kg impedance=%s",
-            address,
-            row["weight_kg"],
-            row["impedance_ohms"],
-        )
-        if once:
-            stop_event.set()
+    async with _mqtt_connection(mqtt_config) as mqtt_client:
+        mqtt_publish_tasks: list[asyncio.Task] = []
 
-    scale_kwargs: dict[str, object] = {"scanning_mode": scanning_mode}
-    if config.adapter:
-        scale_kwargs["adapter"] = config.adapter
-    if model in _GATT_MODELS:
-        scale_kwargs["cooldown_seconds"] = config.cooldown_seconds
-
-    scale = SCALE_CLASSES[model](address, on_measurement, **scale_kwargs)
-
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop_event.set)
-
-    _LOGGER.info(
-        "Starting etekcity-scale-daemon %s for %s scale at %s%s",
-        __version__,
-        model_value,
-        address,
-        f" (once, {once_timeout}s timeout)" if once else "",
-    )
-    await scale.async_start()
-    try:
-        if once:
-            try:
-                await asyncio.wait_for(stop_event.wait(), timeout=once_timeout)
-            except TimeoutError:
-                _LOGGER.warning(
-                    "No measurement received within %s seconds", once_timeout
+        def on_measurement(data: ScaleData) -> None:
+            nonlocal measurement_received
+            row = _measurement_to_row(data, address, model_value)
+            store.record(**row)
+            measurement_received = True
+            _LOGGER.info(
+                "Recorded measurement from %s: weight=%s kg impedance=%s",
+                address,
+                row["weight_kg"],
+                row["impedance_ohms"],
+            )
+            if mqtt_client is not None:
+                mqtt_publish_tasks.append(
+                    asyncio.create_task(
+                        _publish_measurement(mqtt_client, mqtt_config, address, row)
+                    )
                 )
-        else:
-            await stop_event.wait()
-    finally:
-        _LOGGER.info("Shutting down")
-        await scale.async_stop()
-        store.close()
+            if once:
+                stop_event.set()
+
+        scale_kwargs: dict[str, object] = {"scanning_mode": scanning_mode}
+        if config.adapter:
+            scale_kwargs["adapter"] = config.adapter
+        if model in _GATT_MODELS:
+            scale_kwargs["cooldown_seconds"] = config.cooldown_seconds
+
+        scale = SCALE_CLASSES[model](address, on_measurement, **scale_kwargs)
+
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, stop_event.set)
+
+        _LOGGER.info(
+            "Starting etekcity-scale-daemon %s for %s scale at %s%s",
+            __version__,
+            model_value,
+            address,
+            f" (once, {once_timeout}s timeout)" if once else "",
+        )
+        await scale.async_start()
+        try:
+            if once:
+                try:
+                    await asyncio.wait_for(stop_event.wait(), timeout=once_timeout)
+                except TimeoutError:
+                    _LOGGER.warning(
+                        "No measurement received within %s seconds", once_timeout
+                    )
+            else:
+                await stop_event.wait()
+        finally:
+            _LOGGER.info("Shutting down")
+            await scale.async_stop()
+            if mqtt_publish_tasks:
+                await asyncio.wait(mqtt_publish_tasks, timeout=5)
+            store.close()
 
     return measurement_received
 
@@ -207,7 +297,7 @@ def _check_config(config_path: str) -> int:
         return 1
 
     errors: list[str] = []
-    daemon_config = report_config = patient_config = None
+    daemon_config = report_config = patient_config = mqtt_config = None
 
     try:
         daemon_config = load_config(config_path)
@@ -219,6 +309,10 @@ def _check_config(config_path: str) -> int:
         errors.append(str(exc))
     try:
         patient_config = load_patient_config(config_path)
+    except ConfigError as exc:
+        errors.append(str(exc))
+    try:
+        mqtt_config = load_mqtt_config(config_path)
     except ConfigError as exc:
         errors.append(str(exc))
 
@@ -246,6 +340,11 @@ def _check_config(config_path: str) -> int:
         "  patient: name="
         f"{'(set)' if patient_config.name else '(blank)'} email="
         f"{'(set)' if patient_config.email else '(blank)'}"
+    )
+    print(
+        "  mqtt: enabled="
+        f"{'yes' if mqtt_config.enabled else 'no'} "
+        f"host={mqtt_config.host or '(unset)'} port={mqtt_config.port}"
     )
     return 0
 
@@ -320,6 +419,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         config = load_config(args.config)
+        mqtt_config = load_mqtt_config(args.config)
     except ConfigError as exc:
         logging.basicConfig(level=logging.ERROR)
         _LOGGER.error(str(exc))
@@ -333,7 +433,12 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         measurement_received = asyncio.run(
-            run_daemon(config, once=args.once, once_timeout=args.once_timeout)
+            run_daemon(
+                config,
+                once=args.once,
+                once_timeout=args.once_timeout,
+                mqtt_config=mqtt_config,
+            )
         )
     except (TimeoutError, ConfigError) as exc:
         _LOGGER.error(str(exc))
