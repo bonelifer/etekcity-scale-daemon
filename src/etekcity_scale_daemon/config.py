@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import configparser
 from dataclasses import dataclass
+from datetime import date, datetime
 from pathlib import Path
 
 
@@ -34,6 +35,7 @@ class ReportConfig:
     include_impedance: bool
     include_heart_rate: bool
     include_summary: bool
+    include_body_metrics: bool
     weight_unit: str  # "kg", "lb", or "st"
     date_format: str  # "us" or "world"
     layout: str  # "full" or "simple"
@@ -46,6 +48,7 @@ DEFAULT_REPORT_CONFIG = ReportConfig(
     include_impedance=True,
     include_heart_rate=False,
     include_summary=False,
+    include_body_metrics=False,
     weight_unit="kg",
     date_format="world",
     layout="full",
@@ -64,9 +67,17 @@ class PatientConfig:
 
     name: str
     email: str
+    height_m: float  # 0.0 means unset
+    birthdate: date | None
+    sex: str  # "" (unset), "male", or "female"
+    athlete: bool
 
 
-DEFAULT_PATIENT_CONFIG = PatientConfig(name="", email="")
+DEFAULT_PATIENT_CONFIG = PatientConfig(
+    name="", email="", height_m=0.0, birthdate=None, sex="", athlete=False
+)
+
+_SEXES = ("male", "female")
 
 
 def _parse_bool(value: str, key: str) -> bool:
@@ -199,6 +210,9 @@ def load_report_config(config_path: str) -> ReportConfig:
         include_summary=_parse_bool(
             report.get("include_summary", "no"), "report.include_summary"
         ),
+        include_body_metrics=_parse_bool(
+            report.get("include_body_metrics", "no"), "report.include_body_metrics"
+        ),
         weight_unit=weight_unit,
         date_format=date_format,
         layout=layout,
@@ -233,9 +247,36 @@ def load_patient_config(config_path: str) -> PatientConfig:
         return DEFAULT_PATIENT_CONFIG
 
     patient = parser["patient"]
+
+    height_m_str = patient.get("height_m", "").strip()
+    height_m = 0.0
+    if height_m_str:
+        try:
+            height_m = float(height_m_str)
+        except ValueError as exc:
+            raise ConfigError("patient.height_m must be a number") from exc
+        if height_m <= 0:
+            raise ConfigError("patient.height_m must be a positive number")
+
+    birthdate_str = patient.get("birthdate", "").strip()
+    birthdate = None
+    if birthdate_str:
+        try:
+            birthdate = datetime.strptime(birthdate_str, "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise ConfigError("patient.birthdate must be in YYYY-MM-DD format") from exc
+
+    sex = patient.get("sex", "").strip().lower()
+    if sex and sex not in _SEXES:
+        raise ConfigError(f"patient.sex must be one of {_SEXES}, got {sex!r}")
+
     return PatientConfig(
         name=patient.get("name", "").strip(),
         email=patient.get("email", "").strip(),
+        height_m=height_m,
+        birthdate=birthdate,
+        sex=sex,
+        athlete=_parse_bool(patient.get("athlete", "no"), "patient.athlete"),
     )
 
 
