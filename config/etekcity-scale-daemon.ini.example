@@ -31,6 +31,7 @@ log_level = INFO
 #   full   - one row per reading, with the columns below (default)
 #   simple - date/weight only, laid out in several side-by-side columns
 #            so a page isn't mostly empty
+#   chart  - a line chart of weight over time instead of a table
 layout = full
 
 # Columns to include in the "full" layout, yes or no.

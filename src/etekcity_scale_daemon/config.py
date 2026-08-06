@@ -55,7 +55,7 @@ DEFAULT_REPORT_CONFIG = ReportConfig(
 _WEIGHT_UNITS = ("kg", "lb", "st")
 _DATE_FORMATS = ("us", "world")
 _PAGE_SIZES = ("letter", "a4")
-_LAYOUTS = ("full", "simple")
+_LAYOUTS = ("full", "simple", "chart")
 
 
 @dataclass

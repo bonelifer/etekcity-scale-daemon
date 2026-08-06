@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from xml.sax.saxutils import escape
 
+from reportlab.graphics.charts.linecharts import HorizontalLineChart
+from reportlab.graphics.shapes import Drawing, String
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, letter
 from reportlab.lib.styles import getSampleStyleSheet
@@ -54,6 +56,10 @@ _DATE_TIME_FORMATS = {
 
 # Number of side-by-side Date/Weight column pairs in the "simple" layout.
 _SIMPLE_LAYOUT_COLUMN_PAIRS = 3
+
+# Maximum number of x-axis date labels to show on the "chart" layout before
+# thinning them out, so labels don't overlap when there are many readings.
+_CHART_MAX_LABELS = 10
 
 
 def _format_datetime(recorded_at: datetime, date_format: str) -> str:
@@ -384,6 +390,68 @@ def _build_simple_table(rows: list[ReportRow], report_config: ReportConfig) -> T
     return table
 
 
+def _build_chart(rows: list[ReportRow], report_config: ReportConfig) -> Drawing:
+    """Build a line chart of weight over time.
+
+    Args:
+        rows: Measurement rows to include, oldest first.
+        report_config: Supplies the weight unit and date/time format.
+
+    Returns:
+        A reportlab Drawing containing the chart, or just a "not enough
+        data" note if fewer than two readings have a weight value.
+    """
+    weight_factor, weight_label = _WEIGHT_CONVERSIONS[report_config.weight_unit]
+    points = [
+        (row.recorded_at, row.weight_kg * weight_factor)
+        for row in rows
+        if row.weight_kg is not None
+    ]
+
+    drawing = Drawing(480, 260)
+
+    if len(points) < 2:
+        drawing.add(String(10, 130, "Not enough weight data to plot a chart."))
+        return drawing
+
+    values = [point[1] for point in points]
+    date_pattern = "%m/%d" if report_config.date_format == "us" else "%d/%m"
+    date_labels = [point[0].astimezone().strftime(date_pattern) for point in points]
+
+    step = max(1, len(date_labels) // _CHART_MAX_LABELS)
+    thinned_labels = [
+        label if i % step == 0 else "" for i, label in enumerate(date_labels)
+    ]
+
+    chart = HorizontalLineChart()
+    chart.x = 50
+    chart.y = 40
+    chart.width = 400
+    chart.height = 180
+    chart.data = [values]
+    chart.categoryAxis.categoryNames = thinned_labels
+    chart.categoryAxis.labels.angle = 30
+    chart.categoryAxis.labels.dx = -8
+    chart.categoryAxis.labels.dy = -10
+    chart.categoryAxis.labels.fontSize = 7
+    chart.valueAxis.valueMin = min(values) - 1
+    chart.valueAxis.valueMax = max(values) + 1
+    chart.lines[0].strokeColor = colors.HexColor("#2f5d8a")
+    chart.lines[0].strokeWidth = 1.5
+
+    drawing.add(chart)
+    drawing.add(
+        String(
+            chart.x,
+            chart.y + chart.height + 15,
+            f"Weight ({weight_label}) over time",
+            fontName="Helvetica-Bold",
+            fontSize=10,
+        )
+    )
+    return drawing
+
+
 def _summary_line(rows: list[ReportRow], report_config: ReportConfig) -> str | None:
     """Build a min/max/average/net-change summary line for the Weight column.
 
@@ -449,6 +517,8 @@ def build_pdf(
 
     if report_config.layout == "simple":
         elements.append(_build_simple_table(rows, report_config))
+    elif report_config.layout == "chart":
+        elements.append(_build_chart(rows, report_config))
     else:
         elements.append(_build_full_table(rows, report_config))
 
