@@ -1,0 +1,14 @@
+[Unit]
+Description=Etekcity scale HTTP API (latest reading / on-demand report)
+After=etekcity-scale-daemon.service
+
+[Service]
+Type=simple
+User=etekcity-scale-daemon
+Group=etekcity-scale-daemon
+ExecStart=/usr/bin/etekcity-scale-api --config /etc/etekcity-scale-daemon/config.ini
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

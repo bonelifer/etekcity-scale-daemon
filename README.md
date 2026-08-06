@@ -36,7 +36,7 @@ cd etekcity-scale-daemon
 sudo ./install.sh
 ```
 
-This creates a venv at `/opt/etekcity-scale-daemon`, installs the package from the checkout, seeds `/etc/etekcity-scale-daemon/config.ini` (if it doesn't already exist), creates an `etekcity-scale-daemon` system user, and installs and enables the systemd service. It also installs (but does not enable) the [scheduled report generation](#scheduled-report-generation) and [alerting](#alerting) timer units. It's safe to re-run — it skips steps that are already done. Edit the config and `sudo systemctl restart etekcity-scale-daemon` afterward.
+This creates a venv at `/opt/etekcity-scale-daemon`, installs the package from the checkout, seeds `/etc/etekcity-scale-daemon/config.ini` (if it doesn't already exist), creates an `etekcity-scale-daemon` system user, and installs and enables the systemd service. It also installs (but does not enable) the [scheduled report generation](#scheduled-report-generation) and [alerting](#alerting) timer units, and the [HTTP API](#http-api) service. It's safe to re-run — it skips steps that are already done. Edit the config and `sudo systemctl restart etekcity-scale-daemon` afterward.
 
 ### Manual install
 
@@ -97,6 +97,10 @@ Leave `[scale] address` and `model` empty to auto-discover a scale on first run 
 | `alerting` | `stale_after_days` | Alert if a scale hasn't reported in this many days. `0` disables the check. |
 | `alerting` | `weight_swing_threshold_kg` | Alert if two consecutive readings differ by more than this many kg. `0` disables the check. |
 | `alerting` | `state_path` | Where per-scale alert state is persisted (throttles repeat alerts). |
+| `api` | `enabled` | Run the local HTTP API: `yes` or `no`. Defaults to `no`. |
+| `api` | `host` | Bind address. Defaults to `127.0.0.1` (loopback only). |
+| `api` | `port` | Bind port. Defaults to `8080`. |
+| `api` | `token` | Optional bearer token required on all endpoints except `/health`. Blank means no auth. |
 
 #### systemd service
 
@@ -107,6 +111,7 @@ sudo ln -s /opt/etekcity-scale-daemon/venv/bin/etekcity-scale-daemon /usr/bin/et
 sudo ln -s /opt/etekcity-scale-daemon/venv/bin/etekcity-scale-report /usr/bin/etekcity-scale-report
 sudo ln -s /opt/etekcity-scale-daemon/venv/bin/etekcity-scale-prune /usr/bin/etekcity-scale-prune
 sudo ln -s /opt/etekcity-scale-daemon/venv/bin/etekcity-scale-alert-check /usr/bin/etekcity-scale-alert-check
+sudo ln -s /opt/etekcity-scale-daemon/venv/bin/etekcity-scale-api /usr/bin/etekcity-scale-api
 sudo cp scripts/generate-scheduled-report.sh /opt/etekcity-scale-daemon/generate-scheduled-report.sh
 sudo chmod +x /opt/etekcity-scale-daemon/generate-scheduled-report.sh
 sudo ln -s /opt/etekcity-scale-daemon/generate-scheduled-report.sh /usr/bin/etekcity-scale-generate-report
@@ -169,6 +174,43 @@ sudo systemctl enable --now etekcity-scale-alert-check.timer
 ```
 
 Defaults to `OnCalendar=hourly`. A repeat staleness alert is throttled to at most once per day while the condition persists; a weight-swing alert only fires once per newly-arrived reading, not on every check. State is tracked in `alerting.state_path` (default `/var/lib/etekcity-scale-daemon/alert-state.json`) -- delete it to reset throttling. `--check-config` reports whether `[alerting]` is enabled and how many URLs it parsed, without actually sending anything.
+
+### HTTP API
+
+Also optional and not enabled by default. `etekcity-scale-api` runs a small read-only HTTP server exposing the same data as the other tools -- it reads the SQLite database directly and works whether or not the daemon is currently running.
+
+```ini
+[api]
+enabled = yes
+host = 127.0.0.1
+port = 8080
+token =
+```
+
+```bash
+sudo cp systemd/etekcity-scale-api.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now etekcity-scale-api.service
+```
+
+Endpoints:
+
+| Method & path | Description |
+|---|---|
+| `GET /health` | Unauthenticated liveness check: `{"status": "ok", "version": "..."}`. |
+| `GET /latest[?address=...]` | Most recent reading for each scale (or one, if filtered), as JSON. |
+| `GET /report[?format=pdf\|csv&period=...&from=...&to=...&address=...]` | Generates a report on demand using the same `[report]`/`[patient]` config as `etekcity-scale-report`, returned as a file download. |
+
+```bash
+curl http://127.0.0.1:8080/latest
+curl -o report.pdf "http://127.0.0.1:8080/report?period=30d"
+```
+
+**There's no TLS built in.** `host` defaults to `127.0.0.1` (loopback only) for a reason -- don't bind it to `0.0.0.0` or a LAN-facing interface without putting a reverse proxy (with TLS and its own auth) in front of it. Setting `api.token` requires an `Authorization: Bearer <token>` header on every endpoint except `/health`, which is worth doing even on loopback if other local users/processes on the same host shouldn't see scale data:
+
+```bash
+curl -H "Authorization: Bearer <token>" http://127.0.0.1:8080/latest
+```
 
 ### Docker
 

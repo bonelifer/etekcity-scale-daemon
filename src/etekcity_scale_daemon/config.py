@@ -130,6 +130,19 @@ DEFAULT_ALERT_CONFIG = AlertConfig(
 )
 
 
+@dataclass
+class ApiConfig:
+    """Parsed [api] section: optional local HTTP API for reading data on demand."""
+
+    enabled: bool
+    host: str
+    port: int
+    token: str  # "" means no authentication required
+
+
+DEFAULT_API_CONFIG = ApiConfig(enabled=False, host="127.0.0.1", port=8080, token="")
+
+
 def _parse_bool(value: str, key: str) -> bool:
     """Parse a yes/no-style config value.
 
@@ -451,6 +464,44 @@ def load_alert_config(config_path: str) -> AlertConfig:
         stale_after_days=stale_after_days,
         weight_swing_threshold_kg=weight_swing_threshold_kg,
         state_path=alerting.get("state_path", DEFAULT_ALERT_CONFIG.state_path).strip(),
+    )
+
+
+def load_api_config(config_path: str) -> ApiConfig:
+    """Load the ``[api]`` section of the daemon config file, if present.
+
+    Args:
+        config_path: Path to the INI configuration file.
+
+    Returns:
+        The parsed API configuration, or ``DEFAULT_API_CONFIG`` (disabled,
+        bound to loopback) if the file has no ``[api]`` section.
+
+    Raises:
+        ConfigError: If the file is missing or an ``[api]`` value is invalid.
+    """
+    path = Path(config_path)
+    if not path.is_file():
+        raise ConfigError(f"Config file not found: {path}")
+
+    parser = configparser.ConfigParser()
+    parser.read(path)
+
+    if not parser.has_section("api"):
+        return DEFAULT_API_CONFIG
+
+    api = parser["api"]
+
+    try:
+        port = int(api.get("port", str(DEFAULT_API_CONFIG.port)))
+    except ValueError as exc:
+        raise ConfigError("api.port must be an integer") from exc
+
+    return ApiConfig(
+        enabled=_parse_bool(api.get("enabled", "no"), "api.enabled"),
+        host=api.get("host", DEFAULT_API_CONFIG.host).strip() or DEFAULT_API_CONFIG.host,
+        port=port,
+        token=api.get("token", "").strip(),
     )
 
 
