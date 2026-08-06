@@ -114,3 +114,17 @@ stale_after_days = 0
 weight_swing_threshold_kg = 0
 # Where to persist per-scale alert state (throttling repeat alerts).
 state_path = /var/lib/etekcity-scale-daemon/alert-state.json
+
+[api]
+# Lightweight local HTTP API (etekcity-scale-api): GET /health, /latest,
+# and /report. Defaults to no. There's no TLS built in -- keep host
+# bound to loopback (the default) unless it sits behind a reverse proxy.
+enabled = no
+# Bind address. Change to 0.0.0.0 (or a specific interface) only if you
+# understand the exposure -- set token below if you do.
+host = 127.0.0.1
+port = 8080
+# Optional bearer token: if set, all endpoints except /health require an
+# "Authorization: Bearer <token>" header. Leave blank for no auth (fine
+# for loopback-only use).
+token =
