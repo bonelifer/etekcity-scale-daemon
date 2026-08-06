@@ -15,7 +15,14 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, letter
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import (
+    PageBreak,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
 
 from ._version import __version__
 from .config import (
@@ -173,6 +180,41 @@ def fetch_rows(
             )
             for row in cursor.fetchall()
         ]
+    finally:
+        connection.close()
+
+
+def fetch_addresses(
+    db_path: str, start: datetime | None, end: datetime | None
+) -> list[str]:
+    """Return distinct scale addresses with at least one reading in range.
+
+    Args:
+        db_path: Path to the SQLite database file.
+        start: Inclusive UTC start of the date range, or None for no lower bound.
+        end: Exclusive UTC end of the date range, or None for no upper bound.
+
+    Returns:
+        Distinct addresses, ordered by their earliest reading in range.
+    """
+    query = "SELECT address FROM measurements"
+    clauses: list[str] = []
+    params: list[str] = []
+
+    if start is not None:
+        clauses.append("recorded_at >= ?")
+        params.append(start.isoformat())
+    if end is not None:
+        clauses.append("recorded_at < ?")
+        params.append(end.isoformat())
+
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " GROUP BY address ORDER BY MIN(recorded_at) ASC"
+
+    connection = sqlite3.connect(db_path)
+    try:
+        return [row[0] for row in connection.execute(query, params).fetchall()]
     finally:
         connection.close()
 
@@ -525,6 +567,65 @@ def build_pdf(
     doc.build(elements)
 
 
+def build_multi_scale_pdf(
+    sections: list[tuple[str, list[ReportRow]]],
+    output_path: str,
+    report_config: ReportConfig = DEFAULT_REPORT_CONFIG,
+    patient_config: PatientConfig = DEFAULT_PATIENT_CONFIG,
+) -> None:
+    """Render one PDF with a separate section (own table/chart) per scale.
+
+    Args:
+        sections: (address, rows) pairs, one per scale, each already
+            filtered to that address and sorted oldest-first. Every list
+            of rows must be non-empty.
+        output_path: Filesystem path to write the PDF to.
+        report_config: Controls the layout, which columns are shown, the
+            weight unit, the date/time format, the page size, and whether
+            a min/max/average/net-change summary line is printed per section.
+        patient_config: Optional patient name/email to print below the
+            title; fields left blank are omitted.
+    """
+    total_rows = sum(len(rows) for _, rows in sections)
+    styles = getSampleStyleSheet()
+    doc = SimpleDocTemplate(output_path, pagesize=_PAGE_SIZES[report_config.page_size])
+    elements = [
+        Paragraph("Etekcity Scale Measurement Report", styles["Title"]),
+        Paragraph(
+            f"Generated {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}"
+            f" &middot; {total_rows} reading(s) across {len(sections)} scale(s)",
+            styles["Normal"],
+        ),
+    ]
+    if patient_config.name:
+        elements.append(Paragraph(f"Patient: {escape(patient_config.name)}", styles["Normal"]))
+    if patient_config.email:
+        elements.append(Paragraph(f"Email: {escape(patient_config.email)}", styles["Normal"]))
+    elements.append(Spacer(1, 0.25 * inch))
+
+    for index, (address, rows) in enumerate(sections):
+        if index > 0:
+            elements.append(PageBreak())
+        elements.append(
+            Paragraph(f"Scale: {escape(address)} ({escape(rows[0].model)})", styles["Heading2"])
+        )
+        elements.append(Spacer(1, 0.1 * inch))
+        if report_config.include_summary:
+            summary = _summary_line(rows, report_config)
+            if summary:
+                elements.append(Paragraph(summary, styles["Normal"]))
+                elements.append(Spacer(1, 0.1 * inch))
+
+        if report_config.layout == "simple":
+            elements.append(_build_simple_table(rows, report_config))
+        elif report_config.layout == "chart":
+            elements.append(_build_chart(rows, report_config))
+        else:
+            elements.append(_build_full_table(rows, report_config))
+
+    doc.build(elements)
+
+
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
@@ -586,6 +687,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "-a", "--address", help="Restrict the report to one scale's BLE address"
     )
+    parser.add_argument(
+        "-m",
+        "--multi-scale",
+        action="store_true",
+        help=(
+            "One PDF with a separate section per scale address, instead of "
+            "mixing every scale into one table (PDF only; mutually exclusive "
+            "with --address, ignored for --format csv)"
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -600,6 +711,10 @@ def main(argv: list[str] | None = None) -> int:
     """
     args = _parse_args(argv)
 
+    if args.multi_scale and args.address:
+        print("Error: --multi-scale and --address are mutually exclusive")
+        return 1
+
     db_path = args.db
     report_config = DEFAULT_REPORT_CONFIG
     patient_config = DEFAULT_PATIENT_CONFIG
@@ -613,13 +728,25 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
     start, end = _resolve_range(args.period, args.from_date, args.to_date)
+    output = args.output or f"measurements-report.{args.format}"
+
+    if args.multi_scale and args.format != "csv":
+        addresses = fetch_addresses(db_path, start, end)
+        sections = [(a, fetch_rows(db_path, a, start, end)) for a in addresses]
+        if not sections:
+            print("No measurements found for the given range/filters.")
+            return 1
+        build_multi_scale_pdf(sections, output, report_config, patient_config)
+        total_rows = sum(len(rows) for _, rows in sections)
+        print(f"Wrote {total_rows} reading(s) across {len(sections)} scale(s) to {output}")
+        return 0
+
     rows = fetch_rows(db_path, args.address, start, end)
 
     if not rows:
         print("No measurements found for the given range/filters.")
         return 1
 
-    output = args.output or f"measurements-report.{args.format}"
     if args.format == "csv":
         build_csv(rows, output, report_config)
     else:
