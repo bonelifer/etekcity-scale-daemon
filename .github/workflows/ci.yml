@@ -23,3 +23,45 @@ jobs:
 
       - name: Smoke test
         run: ./scripts/smoke-test.sh
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t etekcity-scale-daemon:ci .
+
+      - name: Verify console scripts
+        run: |
+          docker run --rm --entrypoint etekcity-scale-daemon etekcity-scale-daemon:ci --version
+          docker run --rm --entrypoint etekcity-scale-report etekcity-scale-daemon:ci --version
+          docker run --rm --entrypoint etekcity-scale-prune etekcity-scale-daemon:ci --version
+
+      - name: Create fixture database and config
+        run: |
+          mkdir -p /tmp/docker-fixture
+          python3 scripts/make-fixture-db.py /tmp/docker-fixture/measurements.db
+          cat > /tmp/docker-fixture/config.ini <<'EOF'
+          [scale]
+          address = AA:BB:CC:DD:EE:FF
+          model = ESF-551
+          [storage]
+          db_path = /etc/etekcity-scale-daemon/measurements.db
+          [daemon]
+          log_level = INFO
+          EOF
+
+      - name: Check config inside container
+        run: |
+          docker run --rm -v /tmp/docker-fixture:/etc/etekcity-scale-daemon \
+            etekcity-scale-daemon:ci \
+            --config /etc/etekcity-scale-daemon/config.ini --check-config
+
+      - name: Generate a report inside container
+        run: |
+          docker run --rm -v /tmp/docker-fixture:/etc/etekcity-scale-daemon \
+            --entrypoint etekcity-scale-report \
+            etekcity-scale-daemon:ci \
+            --config /etc/etekcity-scale-daemon/config.ini --output /etc/etekcity-scale-daemon/report.pdf
+          test -s /tmp/docker-fixture/report.pdf
