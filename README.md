@@ -218,6 +218,8 @@ curl -H "Authorization: Bearer <token>" http://127.0.0.1:8080/latest
 
 BLE access from inside a container needs the host's D-Bus system bus and Bluetooth adapter, which is why `docker-compose.yml` uses `network_mode: host` plus a bind mount of `/var/run/dbus` — bridge networking would isolate the container from both.
 
+A pre-built image publishes to GHCR from CI on every push to `main`, tagged `latest` and by commit SHA — `docker pull ghcr.io/bonelifer/etekcity-scale-daemon:latest` instead of building locally, if you'd rather not build it yourself. Substitute that image name for `etekcity-scale-daemon` in the commands below to use it instead of `docker build`.
+
 ```bash
 mkdir -p config data
 cp config/etekcity-scale-daemon.ini.example config/config.ini
