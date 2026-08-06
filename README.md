@@ -148,6 +148,14 @@ etekcity-scale-report --db /var/lib/etekcity-scale-daemon/measurements.db --outp
 
 Add `--address AA:BB:CC:DD:EE:FF` to restrict the report to one scale if the database has readings from more than one.
 
+If the database has readings from more than one scale (e.g. different family members each with their own), add `--multi-scale` instead to get one PDF with a separate heading, its own table/chart, and its own summary line per scale, each starting on a fresh page — rather than one table mixing everyone's readings together:
+
+```bash
+etekcity-scale-report --config /etc/etekcity-scale-daemon/config.ini --multi-scale --output all-scales.pdf
+```
+
+`--multi-scale` is mutually exclusive with `--address` and only affects PDF output (`--format csv` ignores it, since the CSV's `Address` column already differentiates scales in one flat file).
+
 Add `--format csv` for a CSV file instead of a PDF (default output path becomes `measurements-report.csv`):
 
 ```bash
