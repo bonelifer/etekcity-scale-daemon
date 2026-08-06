@@ -36,7 +36,7 @@ cd etekcity-scale-daemon
 sudo ./install.sh
 ```
 
-This creates a venv at `/opt/etekcity-scale-daemon`, installs the package from the checkout, seeds `/etc/etekcity-scale-daemon/config.ini` (if it doesn't already exist), creates an `etekcity-scale-daemon` system user, and installs and enables the systemd service. It also installs (but does not enable) the [scheduled report generation](#scheduled-report-generation) timer unit. It's safe to re-run — it skips steps that are already done. Edit the config and `sudo systemctl restart etekcity-scale-daemon` afterward.
+This creates a venv at `/opt/etekcity-scale-daemon`, installs the package from the checkout, seeds `/etc/etekcity-scale-daemon/config.ini` (if it doesn't already exist), creates an `etekcity-scale-daemon` system user, and installs and enables the systemd service. It also installs (but does not enable) the [scheduled report generation](#scheduled-report-generation) and [alerting](#alerting) timer units. It's safe to re-run — it skips steps that are already done. Edit the config and `sudo systemctl restart etekcity-scale-daemon` afterward.
 
 ### Manual install
 
@@ -92,6 +92,11 @@ Leave `[scale] address` and `model` empty to auto-discover a scale on first run 
 | `mqtt` | `topic_prefix` | Messages publish to `<topic_prefix>/<scale address>/state`. Defaults to `etekcity_scale_daemon`. |
 | `mqtt` | `qos` | MQTT QoS level: `0`, `1`, or `2`. Defaults to `0`. |
 | `mqtt` | `retain` | Whether the broker retains the last message for new subscribers: `yes` or `no`. Defaults to `yes`. |
+| `alerting` | `enabled` | Notify via Apprise on staleness/weight-swing conditions: `yes` or `no`. Defaults to `no`. |
+| `alerting` | `apprise_urls` | Comma-separated [Apprise](https://github.com/caronc/apprise) service URLs. Required if `enabled = yes`. |
+| `alerting` | `stale_after_days` | Alert if a scale hasn't reported in this many days. `0` disables the check. |
+| `alerting` | `weight_swing_threshold_kg` | Alert if two consecutive readings differ by more than this many kg. `0` disables the check. |
+| `alerting` | `state_path` | Where per-scale alert state is persisted (throttles repeat alerts). |
 
 #### systemd service
 
@@ -101,6 +106,7 @@ sudo cp systemd/etekcity-scale-daemon.service /etc/systemd/system/
 sudo ln -s /opt/etekcity-scale-daemon/venv/bin/etekcity-scale-daemon /usr/bin/etekcity-scale-daemon
 sudo ln -s /opt/etekcity-scale-daemon/venv/bin/etekcity-scale-report /usr/bin/etekcity-scale-report
 sudo ln -s /opt/etekcity-scale-daemon/venv/bin/etekcity-scale-prune /usr/bin/etekcity-scale-prune
+sudo ln -s /opt/etekcity-scale-daemon/venv/bin/etekcity-scale-alert-check /usr/bin/etekcity-scale-alert-check
 sudo cp scripts/generate-scheduled-report.sh /opt/etekcity-scale-daemon/generate-scheduled-report.sh
 sudo chmod +x /opt/etekcity-scale-daemon/generate-scheduled-report.sh
 sudo ln -s /opt/etekcity-scale-daemon/generate-scheduled-report.sh /usr/bin/etekcity-scale-generate-report
@@ -136,6 +142,33 @@ Prefer cron instead of systemd timers? Skip the timer unit and add a crontab ent
 ```
 0 0 * * 1 /usr/bin/etekcity-scale-generate-report
 ```
+
+### Alerting
+
+Also optional and not enabled by default. `etekcity-scale-alert-check` checks every scale's most recent readings for two conditions and notifies via [Apprise](https://github.com/caronc/apprise) (100+ supported services -- Discord, Telegram, Slack, email, Pushover, generic webhooks, etc.) when triggered:
+
+- **Staleness**: no reading in over `stale_after_days` days.
+- **Weight swing**: the two most recent readings for a scale differ by more than `weight_swing_threshold_kg`.
+
+Both are disabled (`0`) by default -- set at least one to a positive value, plus `apprise_urls`, in the `[alerting]` section:
+
+```ini
+[alerting]
+enabled = yes
+apprise_urls = tgram://bot_token/chat_id, mailto://user:password@gmail.com
+stale_after_days = 2
+weight_swing_threshold_kg = 5
+```
+
+Run it periodically with the bundled timer:
+
+```bash
+sudo cp systemd/etekcity-scale-alert-check.service systemd/etekcity-scale-alert-check.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now etekcity-scale-alert-check.timer
+```
+
+Defaults to `OnCalendar=hourly`. A repeat staleness alert is throttled to at most once per day while the condition persists; a weight-swing alert only fires once per newly-arrived reading, not on every check. State is tracked in `alerting.state_path` (default `/var/lib/etekcity-scale-daemon/alert-state.json`) -- delete it to reset throttling. `--check-config` reports whether `[alerting]` is enabled and how many URLs it parsed, without actually sending anything.
 
 ### Docker
 

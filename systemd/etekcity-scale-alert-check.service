@@ -1,0 +1,8 @@
+[Unit]
+Description=Check Etekcity scale readings for staleness or weight swings
+
+[Service]
+Type=oneshot
+User=etekcity-scale-daemon
+Group=etekcity-scale-daemon
+ExecStart=/usr/bin/etekcity-scale-alert-check --config /etc/etekcity-scale-daemon/config.ini
