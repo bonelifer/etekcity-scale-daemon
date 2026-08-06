@@ -59,24 +59,11 @@ include_summary = no
 
 # Print a body composition snapshot (BMI, body fat %, muscle mass, etc.,
 # via the upstream library's calculations) for the most recent reading
-# that has impedance data. Requires [patient] height_m, birthdate, and sex
-# to all be set below. PDF only; has no effect on --format csv or
-# --multi-scale reports (body metrics assume one shared patient profile).
+# that has impedance data. Requires --profile <name> / ?profile=<name> so
+# the right person's biometrics get used -- see [profile.<name>] below.
+# PDF only; has no effect on --format csv or --multi-scale reports (body
+# metrics need one single profile to apply).
 include_body_metrics = no
-
-[patient]
-# Optional patient name/email printed below the title in PDF reports, e.g.
-# for handing a report to a doctor. Leave either blank to omit that line.
-name =
-email =
-
-# Required only if report.include_body_metrics = yes.
-height_m =
-birthdate =
-# male or female
-sex =
-# yes or no -- affects the body-fat-percentage calculation
-athlete = no
 
 [mqtt]
 # Publish each measurement to an MQTT broker as JSON. Defaults to no. A
@@ -155,21 +142,31 @@ api_base_url = http://127.0.0.1:8080
 # when [api] is disabled.
 dunstify_timeout_seconds = 30
 
-# One [profile.<name>] section per name listed in [profiles] names above,
-# for per-person body composition (report.include_body_metrics /
-# etekcity-scale-report --profile <name> / the API's ?profile= filter).
-# Same fields as [patient] below, but never falls back to it -- a missing
-# or incomplete section is treated as an error for that profile rather
-# than silently reusing someone else's height/sex.
+# One [profile.<name>] section per name listed in [profiles] names above:
+# optional name/email printed below the title in PDF reports (e.g. for
+# handing a report to a doctor -- leave either blank to omit that line),
+# plus body-composition biometrics for report.include_body_metrics /
+# etekcity-scale-report --profile <name> / the API's ?profile= filter.
+# A missing or incomplete section is treated as an error for that profile
+# rather than silently reusing another profile's height/sex.
+#
+# height_unit is the unit that the height value below is written in: m
+# (meters), cm (centimeters), or in (inches). Defaults to m.
 #
 # [profile.Alice]
-# height_m = 1.65
+# name = Alice Smith
+# email = alice@example.com
+# height_unit = m
+# height = 1.65
 # birthdate = 1990-04-12
 # sex = female
 # athlete = no
 #
 # [profile.Bob]
-# height_m = 1.80
+# name = Bob Jones
+# email = bob@example.com
+# height_unit = in
+# height = 70.9
 # birthdate = 1988-11-02
 # sex = male
 # athlete = no

@@ -33,7 +33,6 @@ from .config import (
     PatientConfig,
     ReportConfig,
     load_config,
-    load_patient_config,
     load_profile_biometrics,
     load_report_config,
 )
@@ -824,9 +823,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--profile",
         help=(
             "Restrict to readings tagged with this profile name (requires "
-            "--config); with report.include_body_metrics, also switches body "
-            "metrics to that profile's [profile.<name>] biometrics instead "
-            "of [patient]"
+            "--config); required if report.include_body_metrics is set, "
+            "since biometrics come from that profile's [profile.<name>] "
+            "section"
         ),
     )
     return parser.parse_args(argv)
@@ -853,44 +852,48 @@ def main(argv: list[str] | None = None) -> int:
 
     db_path = args.db
     report_config = DEFAULT_REPORT_CONFIG
-    patient_config = DEFAULT_PATIENT_CONFIG
     if args.config:
         try:
             db_path = load_config(args.config).db_path
             report_config = load_report_config(args.config)
-            patient_config = load_patient_config(args.config)
         except ConfigError as exc:
             print(f"Error: {exc}")
             return 1
 
-    # --profile swaps in that profile's own biometrics (and name, for the
-    # "Patient: ..." line) instead of the global [patient] section -- never
-    # falls back silently, since defaulting to someone else's height/sex
-    # would be a correctness bug, not a convenience.
-    effective_patient_config = patient_config
-    biometrics_section = "patient"
+    # There's no shared [patient] section anymore -- biometrics (and the
+    # name/email printed on the report) only ever come from --profile's own
+    # [profile.<name>] section, never a fallback, since defaulting to
+    # someone else's height/sex would be a correctness bug, not a
+    # convenience.
+    effective_patient_config = DEFAULT_PATIENT_CONFIG
     if args.profile:
         try:
             effective_patient_config = load_profile_biometrics(args.config, args.profile)
         except ConfigError as exc:
             print(f"Error: {exc}")
             return 1
-        biometrics_section = f"profile.{args.profile}"
 
     # Body metrics only render on the single-scale PDF path (not CSV, not
-    # --multi-scale, which has no single patient profile to apply) -- only
-    # require the fields it needs there, so e.g. a CSV export isn't blocked
-    # by patient info it will never use.
+    # --multi-scale, which has no single profile to apply) -- only require
+    # the fields it needs there, so e.g. a CSV export isn't blocked by
+    # biometrics it will never use.
     renders_body_metrics = (
         report_config.include_body_metrics
         and args.format != "csv"
         and not args.multi_scale
     )
     if renders_body_metrics:
+        if not args.profile:
+            print(
+                "Error: report.include_body_metrics is enabled but no "
+                "--profile was given -- biometrics come from that profile's "
+                "[profile.<name>] section"
+            )
+            return 1
         missing = [
             name
             for name, value in (
-                ("height_m", effective_patient_config.height_m),
+                ("height", effective_patient_config.height_m),
                 ("birthdate", effective_patient_config.birthdate),
                 ("sex", effective_patient_config.sex),
             )
@@ -899,7 +902,7 @@ def main(argv: list[str] | None = None) -> int:
         if missing:
             print(
                 "Error: report.include_body_metrics is enabled but "
-                f"[{biometrics_section}] {', '.join(missing)} must be set"
+                f"[profile.{args.profile}] {', '.join(missing)} must be set"
             )
             return 1
 
@@ -912,7 +915,7 @@ def main(argv: list[str] | None = None) -> int:
         if not sections:
             print("No measurements found for the given range/filters.")
             return 1
-        build_multi_scale_pdf(sections, output, report_config, patient_config)
+        build_multi_scale_pdf(sections, output, report_config, DEFAULT_PATIENT_CONFIG)
         total_rows = sum(len(rows) for _, rows in sections)
         print(f"Wrote {total_rows} reading(s) across {len(sections)} scale(s) to {output}")
         return 0

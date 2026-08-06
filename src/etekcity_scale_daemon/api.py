@@ -17,11 +17,11 @@ from aiohttp import web
 
 from ._version import __version__
 from .config import (
+    DEFAULT_PATIENT_CONFIG,
     ApiConfig,
     ConfigError,
     load_api_config,
     load_config,
-    load_patient_config,
     load_profile_biometrics,
     load_profiles_config,
     load_report_config,
@@ -159,11 +159,10 @@ async def handle_report(request: web.Request) -> web.Response:
     """GET /report[?format=pdf|csv&period=...&from=...&to=...&address=...&profile=...].
 
     Generates a report on demand using the same config-driven settings as
-    ``etekcity-scale-report`` and returns it as a file download. When
-    ``profile`` is given, biometrics come from that profile's
-    ``[profile.<name>]`` section instead of ``[patient]`` -- never a
-    silent fallback, since defaulting to someone else's biometrics would
-    be a correctness bug, not a convenience.
+    ``etekcity-scale-report`` and returns it as a file download. Biometrics
+    only ever come from ``profile``'s own ``[profile.<name>]`` section --
+    there's no shared fallback, since defaulting to someone else's
+    biometrics would be a correctness bug, not a convenience.
     """
     unauthorized = _require_auth(request)
     if unauthorized is not None:
@@ -189,21 +188,30 @@ async def handle_report(request: web.Request) -> web.Response:
         return web.json_response({"error": f"invalid date: {exc}"}, status=400)
 
     profile = request.query.get("profile")
-    patient_config = request.app["patient_config"]
-    biometrics_section = "patient"
+    patient_config = DEFAULT_PATIENT_CONFIG
     if profile:
         try:
             patient_config = load_profile_biometrics(request.app["config_path"], profile)
         except ConfigError as exc:
             return web.json_response({"error": str(exc)}, status=400)
-        biometrics_section = f"profile.{profile}"
 
     report_config = request.app["report_config"]
     if report_config.include_body_metrics and fmt != "csv":
+        if not profile:
+            return web.json_response(
+                {
+                    "error": (
+                        "report.include_body_metrics is enabled but no "
+                        "?profile= was given -- biometrics come from that "
+                        "profile's [profile.<name>] section"
+                    )
+                },
+                status=400,
+            )
         missing = [
             name
             for name, value in (
-                ("height_m", patient_config.height_m),
+                ("height", patient_config.height_m),
                 ("birthdate", patient_config.birthdate),
                 ("sex", patient_config.sex),
             )
@@ -214,7 +222,7 @@ async def handle_report(request: web.Request) -> web.Response:
                 {
                     "error": (
                         f"report.include_body_metrics is enabled but "
-                        f"[{biometrics_section}] {', '.join(missing)} must be set"
+                        f"[profile.{profile}] {', '.join(missing)} must be set"
                     )
                 },
                 status=400,
@@ -254,7 +262,6 @@ def build_app(
     db_path: str,
     api_config: ApiConfig,
     report_config,
-    patient_config,
     profiles_config,
 ) -> web.Application:
     """Build the aiohttp application with routes and shared state attached.
@@ -265,7 +272,6 @@ def build_app(
         db_path: Path to the SQLite database file.
         api_config: Supplies the auth token.
         report_config: Used for on-demand report generation.
-        patient_config: Used for on-demand PDF report generation.
         profiles_config: Supplies the valid profile names for /assign-profile.
 
     Returns:
@@ -276,7 +282,6 @@ def build_app(
     app["db_path"] = db_path
     app["api_token"] = api_config.token
     app["report_config"] = report_config
-    app["patient_config"] = patient_config
     app["profiles_config"] = profiles_config
     app.router.add_get("/health", handle_health)
     app.router.add_get("/latest", handle_latest)
@@ -320,7 +325,6 @@ def main(argv: list[str] | None = None) -> int:
         db_path = load_config(args.config).db_path
         api_config = load_api_config(args.config)
         report_config = load_report_config(args.config)
-        patient_config = load_patient_config(args.config)
         profiles_config = load_profiles_config(args.config)
     except ConfigError as exc:
         print(f"Error: {exc}")
@@ -331,9 +335,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     ensure_schema(db_path)
-    app = build_app(
-        args.config, db_path, api_config, report_config, patient_config, profiles_config
-    )
+    app = build_app(args.config, db_path, api_config, report_config, profiles_config)
     print(f"Listening on http://{api_config.host}:{api_config.port}")
     web.run_app(app, host=api_config.host, port=api_config.port, print=None)
     return 0

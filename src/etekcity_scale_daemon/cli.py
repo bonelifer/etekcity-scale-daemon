@@ -41,7 +41,7 @@ from .config import (
     load_api_config,
     load_config,
     load_mqtt_config,
-    load_patient_config,
+    load_profile_biometrics,
     load_profiles_config,
     load_report_config,
     persist_discovered_scale,
@@ -458,7 +458,7 @@ def _check_config(config_path: str) -> int:
         return 1
 
     errors: list[str] = []
-    daemon_config = report_config = patient_config = None
+    daemon_config = report_config = None
     mqtt_config = alert_config = api_config = profiles_config = None
 
     try:
@@ -467,10 +467,6 @@ def _check_config(config_path: str) -> int:
         errors.append(str(exc))
     try:
         report_config = load_report_config(config_path)
-    except ConfigError as exc:
-        errors.append(str(exc))
-    try:
-        patient_config = load_patient_config(config_path)
     except ConfigError as exc:
         errors.append(str(exc))
     try:
@@ -500,6 +496,17 @@ def _check_config(config_path: str) -> int:
             "profiles.enabled = yes with [api] enabled requires profiles.ntfy_url to be set"
         )
 
+    biometrics_complete = 0
+    if not errors:
+        for name in profiles_config.names:
+            try:
+                profile = load_profile_biometrics(config_path, name)
+            except ConfigError as exc:
+                errors.append(str(exc))
+                continue
+            if profile.height_m and profile.birthdate and profile.sex:
+                biometrics_complete += 1
+
     if errors:
         print(f"{config_path}: INVALID")
         for error in errors:
@@ -519,11 +526,6 @@ def _check_config(config_path: str) -> int:
         "  report: layout="
         f"{report_config.layout} weight_unit={report_config.weight_unit} "
         f"date_format={report_config.date_format} page_size={report_config.page_size}"
-    )
-    print(
-        "  patient: name="
-        f"{'(set)' if patient_config.name else '(blank)'} email="
-        f"{'(set)' if patient_config.email else '(blank)'}"
     )
     print(
         "  mqtt: enabled="
@@ -547,6 +549,7 @@ def _check_config(config_path: str) -> int:
         "  profiles: enabled="
         f"{'yes' if profiles_config.enabled else 'no'} "
         f"names={len(profiles_config.names)} "
+        f"biometrics_complete={biometrics_complete}/{len(profiles_config.names)} "
         f"path={'ntfy' if api_config.enabled else 'dunstify'}"
     )
     return 0

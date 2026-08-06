@@ -77,13 +77,7 @@ Leave `[scale] address` and `model` empty to auto-discover a scale on first run 
 | `report` | `date_format` | `us` (MM/DD/YYYY, 12-hour) or `world` (DD/MM/YYYY, 24-hour). |
 | `report` | `page_size` | PDF page size: `letter` or `a4`. |
 | `report` | `include_summary` | Print a min/max/average/net-change summary line for Weight below the title: `yes` or `no`. Defaults to `no`. |
-| `report` | `include_body_metrics` | Print a BMI/body-fat/etc. snapshot for the latest impedance reading: `yes` or `no`. Requires `[patient] height_m`/`birthdate`/`sex`. PDF only. Defaults to `no`. |
-| `patient` | `name` | Patient name printed below the title in PDF reports. Leave blank to omit. |
-| `patient` | `email` | Patient email printed below the title in PDF reports. Leave blank to omit. |
-| `patient` | `height_m` | Height in meters. Required if `include_body_metrics = yes`. |
-| `patient` | `birthdate` | `YYYY-MM-DD`. Required if `include_body_metrics = yes` (age is computed fresh from this on every report). |
-| `patient` | `sex` | `male` or `female`. Required if `include_body_metrics = yes`. |
-| `patient` | `athlete` | `yes` or `no`. Affects the body-fat-percentage calculation. Defaults to `no`. |
+| `report` | `include_body_metrics` | Print a BMI/body-fat/etc. snapshot for the latest impedance reading: `yes` or `no`. Requires `--profile <name>`/`?profile=<name>` (see `profile.<name>` below). PDF only. Defaults to `no`. |
 | `mqtt` | `enabled` | Publish each measurement to MQTT as JSON: `yes` or `no`. Defaults to `no`. |
 | `mqtt` | `host` | Broker hostname. Required if `enabled = yes`. |
 | `mqtt` | `port` | Broker port. Defaults to `1883`. |
@@ -107,7 +101,9 @@ Leave `[scale] address` and `model` empty to auto-discover a scale on first run 
 | `profiles` | `ntfy_token` | Optional ntfy access token. |
 | `profiles` | `api_base_url` | Where this API is reachable, for ntfy's action buttons to call back into. |
 | `profiles` | `dunstify_timeout_seconds` | Seconds to wait for a local dunstify response. Only used when `[api] enabled = no`. Defaults to `30`. |
-| `profile.<name>` | `height_m` / `birthdate` / `sex` / `athlete` | Same fields as `[patient]`, but per profile -- used for that person's body composition. One section per name in `profiles.names`. Never falls back to `[patient]`. |
+| `profile.<name>` | `name` / `email` | Optional, printed below the title in PDF reports when this profile is selected. Leave blank to omit; `name` defaults to the profile's own name (e.g. `Alice`) if left blank. |
+| `profile.<name>` | `height_unit` | Unit that `height` below is written in: `m`, `cm`, or `in`. Defaults to `m`. |
+| `profile.<name>` | `height` / `birthdate` / `sex` / `athlete` | Required for this person's body composition if `report.include_body_metrics = yes`. One section per name in `profiles.names`. Never falls back to another profile's values. |
 
 #### systemd service
 
@@ -206,7 +202,7 @@ Endpoints:
 |---|---|
 | `GET /health` | Unauthenticated liveness check: `{"status": "ok", "version": "..."}`. |
 | `GET /latest[?address=...]` | Most recent reading for each scale (or one, if filtered), as JSON. |
-| `GET /report[?format=pdf\|csv&period=...&from=...&to=...&address=...]` | Generates a report on demand using the same `[report]`/`[patient]` config as `etekcity-scale-report`, returned as a file download. |
+| `GET /report[?format=pdf\|csv&period=...&from=...&to=...&address=...&profile=...]` | Generates a report on demand using the same `[report]` config as `etekcity-scale-report`, returned as a file download. |
 
 ```bash
 curl http://127.0.0.1:8080/latest
@@ -244,14 +240,25 @@ curl "http://127.0.0.1:8080/assign-profile?id=42&profile=Alice"
 
 #### Per-profile body composition
 
-Give each profile its own `[profile.<name>]` section (same `height_m`/`birthdate`/`sex`/`athlete` fields as `[patient]`) and both the report CLI and the API can compute body composition for the right person instead of whoever's in `[patient]`:
+Give each profile its own `[profile.<name>]` section -- name/email plus `height_unit`/`height`/`birthdate`/`sex`/`athlete` -- and both the report CLI and the API can compute body composition for the right person:
+
+```ini
+[profile.Alice]
+name = Alice Smith
+email = alice@example.com
+height_unit = cm
+height = 165
+birthdate = 1990-04-12
+sex = female
+athlete = no
+```
 
 ```bash
 etekcity-scale-report --config /etc/etekcity-scale-daemon/config.ini --profile Alice --output alice-report.pdf
 curl -o alice-report.pdf "http://127.0.0.1:8080/report?profile=Alice"
 ```
 
-`--profile`/`?profile=` also filters which readings are included (only ones tagged with that name), not just which biometrics get used. This never falls back to `[patient]` when a profile's section is missing or incomplete -- that would mean silently computing Bob's body fat percentage using Alice's height, which is a correctness bug, not a convenience, so it's a clear error instead.
+`--profile`/`?profile=` also filters which readings are included (only ones tagged with that name), not just which biometrics get used, and is required whenever `report.include_body_metrics = yes` -- there's no shared fallback section. This never falls back to another profile's values when a profile's section is missing or incomplete -- that would mean silently computing Bob's body fat percentage using Alice's height, which is a correctness bug, not a convenience, so it's a clear error instead.
 
 Why ntfy specifically: unlike most notification services, ntfy's `http` action type is a full HTTP request (URL, method, headers, body) fired directly when the button is tapped -- the notification service itself is the callback mechanism, no separate bot or polling process needed. Pushover only supports a single acknowledge callback tied to emergency-priority alerts, Pushbullet's actionable notifications are about mirroring your own devices rather than third-party callbacks, and Gotify has no equivalent at all. [Apprise](https://github.com/caronc/apprise) (used for [alerting](#alerting)) isn't used here either -- its unified API has no concept of actions since it targets 100+ services and most have nothing like this.
 
@@ -370,9 +377,9 @@ Add `--format csv` for a CSV file instead of a PDF (default output path becomes 
 etekcity-scale-report --config /etc/etekcity-scale-daemon/config.ini --format csv --output report.csv
 ```
 
-CSV export always uses the `full` layout's column set (respecting `include_address`/`include_model`/`include_impedance`/`include_heart_rate`, `weight_unit`, and `date_format`) — `layout`, `page_size`, `include_summary`, `include_body_metrics`, and `[patient]` are PDF-only and have no effect on CSV.
+CSV export always uses the `full` layout's column set (respecting `include_address`/`include_model`/`include_impedance`/`include_heart_rate`, `weight_unit`, and `date_format`) — `layout`, `page_size`, `include_summary`, `include_body_metrics`, and profile name/email/biometrics are PDF-only and have no effect on CSV.
 
-Set `report.include_body_metrics = yes` (plus `[patient] height_m`/`birthdate`/`sex`) for a "Body Composition" section — BMI, body fat %, muscle mass, bone mass, and the rest of the upstream library's `BodyMetrics` calculations, computed from the single most recent reading that has impedance data. It's a current snapshot, not a per-reading history, and only applies to single-scale PDF reports — it's skipped for `--format csv` (no [patient] context there) and for `--multi-scale` (which can represent readings from different people, so one shared height/birthdate/sex wouldn't make sense).
+Set `report.include_body_metrics = yes` and pass `--profile <name>`/`?profile=<name>` (see [Per-profile body composition](#per-profile-body-composition)) for a "Body Composition" section — BMI, body fat %, muscle mass, bone mass, and the rest of the upstream library's `BodyMetrics` calculations, computed from the single most recent reading that has impedance data. It's a current snapshot, not a per-reading history, and only applies to single-scale PDF reports — it's skipped for `--format csv` (no profile context there) and for `--multi-scale` (which can represent readings from different people, so one shared height/birthdate/sex wouldn't make sense).
 
 The layout, which columns appear, the weight unit, and the date/time format are all controlled by the `[report]` section of the config file (see the table above) — `--config` reads them, `--db` always uses the defaults (`full` layout, all columns, kilograms, `world` date format).
 
@@ -382,7 +389,7 @@ The `chart` layout replaces the table with a line chart of weight over time (x-a
 
 See [samples/](samples/) for a rendered PDF of every layout/unit/date-format combination.
 
-Set `[patient] name` and/or `email` (only read from `--config`, not `--db`) to print that identifying info below the title — handy when handing a report to a doctor. Leave either blank to omit it; leave both blank and no patient line is printed at all.
+Set a profile's `name` and/or `email` (only usable via `--profile`/`?profile=`, and only read from `--config`, not `--db`) to print that identifying info below the title — handy when handing a report to a doctor. Leave either blank to omit it; leave both blank and no patient line is printed at all.
 
 ## Pruning old data
 
