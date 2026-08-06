@@ -32,6 +32,7 @@ from .config import (
     ConfigError,
     DaemonConfig,
     MqttConfig,
+    load_alert_config,
     load_config,
     load_mqtt_config,
     load_patient_config,
@@ -297,7 +298,7 @@ def _check_config(config_path: str) -> int:
         return 1
 
     errors: list[str] = []
-    daemon_config = report_config = patient_config = mqtt_config = None
+    daemon_config = report_config = patient_config = mqtt_config = alert_config = None
 
     try:
         daemon_config = load_config(config_path)
@@ -313,6 +314,10 @@ def _check_config(config_path: str) -> int:
         errors.append(str(exc))
     try:
         mqtt_config = load_mqtt_config(config_path)
+    except ConfigError as exc:
+        errors.append(str(exc))
+    try:
+        alert_config = load_alert_config(config_path)
     except ConfigError as exc:
         errors.append(str(exc))
 
@@ -345,6 +350,13 @@ def _check_config(config_path: str) -> int:
         "  mqtt: enabled="
         f"{'yes' if mqtt_config.enabled else 'no'} "
         f"host={mqtt_config.host or '(unset)'} port={mqtt_config.port}"
+    )
+    print(
+        "  alerting: enabled="
+        f"{'yes' if alert_config.enabled else 'no'} "
+        f"stale_after_days={alert_config.stale_after_days} "
+        f"weight_swing_threshold_kg={alert_config.weight_swing_threshold_kg} "
+        f"urls={len(alert_config.apprise_urls)}"
     )
     return 0
 

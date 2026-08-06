@@ -96,3 +96,21 @@ topic_prefix = etekcity_scale_daemon
 qos = 0
 # yes or no -- whether the broker retains the last message for new subscribers
 retain = yes
+
+[alerting]
+# Notify via Apprise (https://github.com/caronc/apprise) if a scale goes
+# quiet or a weight changes a lot between consecutive readings. Checked by
+# etekcity-scale-alert-check, run periodically (see
+# etekcity-scale-alert-check.timer) -- nothing here runs automatically on
+# its own. Defaults to no.
+enabled = no
+# Comma-separated Apprise service URLs, e.g. tgram://bot_token/chat_id.
+# Required if enabled = yes.
+apprise_urls =
+# Alert if a scale hasn't reported in this many days. 0 disables this check.
+stale_after_days = 0
+# Alert if two consecutive readings differ by more than this many kg
+# (always kg regardless of report.weight_unit). 0 disables this check.
+weight_swing_threshold_kg = 0
+# Where to persist per-scale alert state (throttling repeat alerts).
+state_path = /var/lib/etekcity-scale-daemon/alert-state.json

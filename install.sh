@@ -32,6 +32,7 @@ echo "==> Linking commands into /usr/bin"
 ln -sf "${INSTALL_DIR}/venv/bin/etekcity-scale-daemon" /usr/bin/etekcity-scale-daemon
 ln -sf "${INSTALL_DIR}/venv/bin/etekcity-scale-report" /usr/bin/etekcity-scale-report
 ln -sf "${INSTALL_DIR}/venv/bin/etekcity-scale-prune" /usr/bin/etekcity-scale-prune
+ln -sf "${INSTALL_DIR}/venv/bin/etekcity-scale-alert-check" /usr/bin/etekcity-scale-alert-check
 cp "${REPO_DIR}/scripts/generate-scheduled-report.sh" "${INSTALL_DIR}/generate-scheduled-report.sh"
 chmod +x "${INSTALL_DIR}/generate-scheduled-report.sh"
 ln -sf "${INSTALL_DIR}/generate-scheduled-report.sh" /usr/bin/etekcity-scale-generate-report
@@ -54,10 +55,14 @@ echo "==> Installing systemd units"
 cp "${REPO_DIR}/systemd/etekcity-scale-daemon.service" /etc/systemd/system/
 cp "${REPO_DIR}/systemd/etekcity-scale-report-generate.service" /etc/systemd/system/
 cp "${REPO_DIR}/systemd/etekcity-scale-report-generate.timer" /etc/systemd/system/
+cp "${REPO_DIR}/systemd/etekcity-scale-alert-check.service" /etc/systemd/system/
+cp "${REPO_DIR}/systemd/etekcity-scale-alert-check.timer" /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now etekcity-scale-daemon
 
 echo "==> Done. Edit ${CONFIG_DIR}/config.ini if you haven't, then watch discovery with:"
 echo "        journalctl -u etekcity-scale-daemon -f"
-echo "==> Scheduled report generation is installed but not enabled (opt-in). To turn it on:"
+echo "==> Scheduled report generation and alert checking are installed but not enabled"
+echo "    (opt-in). To turn them on:"
 echo "        sudo systemctl enable --now etekcity-scale-report-generate.timer"
+echo "        sudo systemctl enable --now etekcity-scale-alert-check.timer"

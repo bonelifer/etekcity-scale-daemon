@@ -110,6 +110,26 @@ DEFAULT_MQTT_CONFIG = MqttConfig(
 _QOS_LEVELS = (0, 1, 2)
 
 
+@dataclass
+class AlertConfig:
+    """Parsed [alerting] section: optional Apprise-based notifications."""
+
+    enabled: bool
+    apprise_urls: list[str]
+    stale_after_days: int  # 0 disables the staleness check
+    weight_swing_threshold_kg: float  # 0.0 disables the weight-swing check
+    state_path: str
+
+
+DEFAULT_ALERT_CONFIG = AlertConfig(
+    enabled=False,
+    apprise_urls=[],
+    stale_after_days=0,
+    weight_swing_threshold_kg=0.0,
+    state_path="/var/lib/etekcity-scale-daemon/alert-state.json",
+)
+
+
 def _parse_bool(value: str, key: str) -> bool:
     """Parse a yes/no-style config value.
 
@@ -362,6 +382,75 @@ def load_mqtt_config(config_path: str) -> MqttConfig:
         topic_prefix=mqtt.get("topic_prefix", DEFAULT_MQTT_CONFIG.topic_prefix).strip(),
         qos=qos,
         retain=_parse_bool(mqtt.get("retain", "yes"), "mqtt.retain"),
+    )
+
+
+def load_alert_config(config_path: str) -> AlertConfig:
+    """Load the ``[alerting]`` section of the daemon config file, if present.
+
+    Args:
+        config_path: Path to the INI configuration file.
+
+    Returns:
+        The parsed alert configuration, or ``DEFAULT_ALERT_CONFIG``
+        (disabled) if the file has no ``[alerting]`` section.
+
+    Raises:
+        ConfigError: If the file is missing or an ``[alerting]`` value is
+            invalid, including enabling it with nothing to check or without
+            any notification URLs.
+    """
+    path = Path(config_path)
+    if not path.is_file():
+        raise ConfigError(f"Config file not found: {path}")
+
+    parser = configparser.ConfigParser()
+    parser.read(path)
+
+    if not parser.has_section("alerting"):
+        return DEFAULT_ALERT_CONFIG
+
+    alerting = parser["alerting"]
+    enabled = _parse_bool(alerting.get("enabled", "no"), "alerting.enabled")
+
+    urls_raw = alerting.get("apprise_urls", "").strip()
+    apprise_urls = [url.strip() for url in urls_raw.split(",") if url.strip()]
+    if enabled and not apprise_urls:
+        raise ConfigError("alerting.apprise_urls must be set when alerting.enabled = yes")
+
+    try:
+        stale_after_days = int(
+            alerting.get("stale_after_days", str(DEFAULT_ALERT_CONFIG.stale_after_days))
+        )
+    except ValueError as exc:
+        raise ConfigError("alerting.stale_after_days must be an integer") from exc
+    if stale_after_days < 0:
+        raise ConfigError("alerting.stale_after_days must be zero or positive")
+
+    try:
+        weight_swing_threshold_kg = float(
+            alerting.get(
+                "weight_swing_threshold_kg",
+                str(DEFAULT_ALERT_CONFIG.weight_swing_threshold_kg),
+            )
+        )
+    except ValueError as exc:
+        raise ConfigError("alerting.weight_swing_threshold_kg must be a number") from exc
+    if weight_swing_threshold_kg < 0:
+        raise ConfigError("alerting.weight_swing_threshold_kg must be zero or positive")
+
+    if enabled and stale_after_days == 0 and weight_swing_threshold_kg == 0:
+        raise ConfigError(
+            "alerting.enabled = yes but neither stale_after_days nor "
+            "weight_swing_threshold_kg is set -- nothing to check"
+        )
+
+    return AlertConfig(
+        enabled=enabled,
+        apprise_urls=apprise_urls,
+        stale_after_days=stale_after_days,
+        weight_swing_threshold_kg=weight_swing_threshold_kg,
+        state_path=alerting.get("state_path", DEFAULT_ALERT_CONFIG.state_path).strip(),
     )
 
 
