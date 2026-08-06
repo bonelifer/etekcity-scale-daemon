@@ -33,7 +33,7 @@ from .config import (
     PatientConfig,
     ReportConfig,
     load_config,
-    load_patient_config,
+    load_profile_biometrics,
     load_report_config,
 )
 
@@ -154,6 +154,7 @@ def fetch_rows(
     address: str | None,
     start: datetime | None,
     end: datetime | None,
+    profile: str | None = None,
 ) -> list[ReportRow]:
     """Query measurements from the database within an optional address/date range.
 
@@ -162,6 +163,7 @@ def fetch_rows(
         address: Restrict to a single scale's BLE address, if given.
         start: Inclusive UTC start of the date range, or None for no lower bound.
         end: Exclusive UTC end of the date range, or None for no upper bound.
+        profile: Restrict to readings tagged with this profile name, if given.
 
     Returns:
         Matching rows ordered oldest first.
@@ -176,6 +178,9 @@ def fetch_rows(
     if address:
         clauses.append("address = ?")
         params.append(address)
+    if profile:
+        clauses.append("profile = ?")
+        params.append(profile)
     if start is not None:
         clauses.append("recorded_at >= ?")
         params.append(start.isoformat())
@@ -813,6 +818,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "with --address, ignored for --format csv)"
         ),
     )
+    parser.add_argument(
+        "-P",
+        "--profile",
+        help=(
+            "Restrict to readings tagged with this profile name (requires "
+            "--config); required if report.include_body_metrics is set, "
+            "since biometrics come from that profile's [profile.<name>] "
+            "section"
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -831,41 +846,63 @@ def main(argv: list[str] | None = None) -> int:
         print("Error: --multi-scale and --address are mutually exclusive")
         return 1
 
+    if args.profile and not args.config:
+        print("Error: --profile requires --config (profile biometrics live in the config file)")
+        return 1
+
     db_path = args.db
     report_config = DEFAULT_REPORT_CONFIG
-    patient_config = DEFAULT_PATIENT_CONFIG
     if args.config:
         try:
             db_path = load_config(args.config).db_path
             report_config = load_report_config(args.config)
-            patient_config = load_patient_config(args.config)
+        except ConfigError as exc:
+            print(f"Error: {exc}")
+            return 1
+
+    # There's no shared [patient] section anymore -- biometrics (and the
+    # name/email printed on the report) only ever come from --profile's own
+    # [profile.<name>] section, never a fallback, since defaulting to
+    # someone else's height/sex would be a correctness bug, not a
+    # convenience.
+    effective_patient_config = DEFAULT_PATIENT_CONFIG
+    if args.profile:
+        try:
+            effective_patient_config = load_profile_biometrics(args.config, args.profile)
         except ConfigError as exc:
             print(f"Error: {exc}")
             return 1
 
     # Body metrics only render on the single-scale PDF path (not CSV, not
-    # --multi-scale, which has no single patient profile to apply) -- only
-    # require the fields it needs there, so e.g. a CSV export isn't blocked
-    # by patient info it will never use.
+    # --multi-scale, which has no single profile to apply) -- only require
+    # the fields it needs there, so e.g. a CSV export isn't blocked by
+    # biometrics it will never use.
     renders_body_metrics = (
         report_config.include_body_metrics
         and args.format != "csv"
         and not args.multi_scale
     )
     if renders_body_metrics:
+        if not args.profile:
+            print(
+                "Error: report.include_body_metrics is enabled but no "
+                "--profile was given -- biometrics come from that profile's "
+                "[profile.<name>] section"
+            )
+            return 1
         missing = [
             name
             for name, value in (
-                ("height_m", patient_config.height_m),
-                ("birthdate", patient_config.birthdate),
-                ("sex", patient_config.sex),
+                ("height", effective_patient_config.height_m),
+                ("birthdate", effective_patient_config.birthdate),
+                ("sex", effective_patient_config.sex),
             )
             if not value
         ]
         if missing:
             print(
-                "Error: report.include_body_metrics is enabled but [patient] "
-                f"{', '.join(missing)} must be set"
+                "Error: report.include_body_metrics is enabled but "
+                f"[profile.{args.profile}] {', '.join(missing)} must be set"
             )
             return 1
 
@@ -878,12 +915,12 @@ def main(argv: list[str] | None = None) -> int:
         if not sections:
             print("No measurements found for the given range/filters.")
             return 1
-        build_multi_scale_pdf(sections, output, report_config, patient_config)
+        build_multi_scale_pdf(sections, output, report_config, DEFAULT_PATIENT_CONFIG)
         total_rows = sum(len(rows) for _, rows in sections)
         print(f"Wrote {total_rows} reading(s) across {len(sections)} scale(s) to {output}")
         return 0
 
-    rows = fetch_rows(db_path, args.address, start, end)
+    rows = fetch_rows(db_path, args.address, start, end, args.profile)
 
     if not rows:
         print("No measurements found for the given range/filters.")
@@ -892,7 +929,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.format == "csv":
         build_csv(rows, output, report_config)
     else:
-        build_pdf(rows, output, report_config, patient_config)
+        build_pdf(rows, output, report_config, effective_patient_config)
     print(f"Wrote {len(rows)} reading(s) to {output}")
     return 0
 
