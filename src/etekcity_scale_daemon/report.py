@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from xml.sax.saxutils import escape
 
+from etekcity_esf551_ble import BodyMetrics, Sex, calc_age
 from reportlab.graphics.charts.linecharts import HorizontalLineChart
 from reportlab.graphics.shapes import Drawing, String
 from reportlab.lib import colors
@@ -67,6 +68,26 @@ _SIMPLE_LAYOUT_COLUMN_PAIRS = 3
 # Maximum number of x-axis date labels to show on the "chart" layout before
 # thinning them out, so labels don't overlap when there are many readings.
 _CHART_MAX_LABELS = 10
+
+# BodyMetrics.as_dict() key -> (display label, formatting kind).
+_BODY_METRICS_FIELDS = [
+    ("body_mass_index", "BMI", "bmi"),
+    ("body_fat_percentage", "Body Fat", "percent"),
+    ("fat_free_weight", "Fat-Free Weight", "weight"),
+    ("subcutaneous_fat_percentage", "Subcutaneous Fat", "percent"),
+    ("visceral_fat_value", "Visceral Fat", "plain"),
+    ("body_water_percentage", "Body Water", "percent"),
+    ("basal_metabolic_rate", "Basal Metabolic Rate", "calories"),
+    ("skeletal_muscle_percentage", "Skeletal Muscle", "percent"),
+    ("muscle_mass", "Muscle Mass", "weight"),
+    ("bone_mass", "Bone Mass", "weight"),
+    ("protein_percentage", "Protein", "percent"),
+    ("weight_score", "Weight Score", "score"),
+    ("fat_score", "Fat Score", "score"),
+    ("bmi_score", "BMI Score", "score"),
+    ("health_score", "Health Score", "score"),
+    ("metabolic_age", "Metabolic Age", "years"),
+]
 
 
 def _format_datetime(recorded_at: datetime, date_format: str) -> str:
@@ -520,6 +541,93 @@ def _summary_line(rows: list[ReportRow], report_config: ReportConfig) -> str | N
     )
 
 
+def _format_body_metric(kind: str, value: float, weight_factor: float, weight_label: str) -> str:
+    """Format one BodyMetrics value for display, based on its unit kind."""
+    if kind == "weight":
+        return f"{value * weight_factor:.2f} {weight_label}"
+    if kind == "percent":
+        return f"{value:.1f}%"
+    if kind == "calories":
+        return f"{value:.0f} cal"
+    if kind == "score":
+        return f"{value:.0f}/100"
+    if kind == "years":
+        return f"{value:.0f} years"
+    if kind == "bmi":
+        return f"{value:.1f}"
+    return str(value)
+
+
+def _build_body_metrics_elements(
+    rows: list[ReportRow],
+    report_config: ReportConfig,
+    patient_config: PatientConfig,
+    styles,
+) -> list:
+    """Build a "Body Composition" heading and table for the latest reading.
+
+    Uses the most recent row with both a weight and impedance value (older
+    rows are ignored -- this is a current snapshot, not a per-reading
+    history). Requires ``patient_config.height_m``/``birthdate``/``sex`` to
+    already be validated as set by the caller.
+
+    Args:
+        rows: Measurement rows to include, oldest first.
+        report_config: Supplies the weight unit to render weight-based
+            metrics in.
+        patient_config: Supplies height, birthdate, sex, and athlete status.
+        styles: The document's reportlab stylesheet.
+
+    Returns:
+        Flowables to append: either a heading + metrics table, or a single
+        note paragraph if no row has both weight and impedance data.
+    """
+    latest = next(
+        (
+            row
+            for row in reversed(rows)
+            if row.weight_kg is not None and row.impedance_ohms is not None
+        ),
+        None,
+    )
+    if latest is None:
+        return [
+            Paragraph(
+                "Body composition: no reading with impedance data available "
+                "in this report's range.",
+                styles["Normal"],
+            ),
+            Spacer(1, 0.15 * inch),
+        ]
+
+    weight_factor, weight_label = _WEIGHT_CONVERSIONS[report_config.weight_unit]
+    metrics = BodyMetrics(
+        weight_kg=latest.weight_kg,
+        height_m=patient_config.height_m,
+        age=calc_age(patient_config.birthdate),
+        sex=Sex.Male if patient_config.sex == "male" else Sex.Female,
+        impedance=latest.impedance_ohms,
+        athlete=patient_config.athlete,
+    ).as_dict()
+
+    data = [["Metric", "Value"]]
+    data.extend(
+        [label, _format_body_metric(kind, metrics[key], weight_factor, weight_label)]
+        for key, label, kind in _BODY_METRICS_FIELDS
+    )
+
+    table = Table(data, colWidths=[220, 120])
+    table.setStyle(_table_style([1]))
+
+    date_label = _format_datetime(latest.recorded_at, report_config.date_format)
+    return [
+        Paragraph(f"Body Composition (as of {date_label})", styles["Heading2"]),
+        Spacer(1, 0.05 * inch),
+        table,
+        Spacer(1, 0.15 * inch),
+    ]
+
+
 def build_pdf(
     rows: list[ReportRow],
     output_path: str,
@@ -532,10 +640,13 @@ def build_pdf(
         rows: Measurement rows to include, oldest first.
         output_path: Filesystem path to write the PDF to.
         report_config: Controls the layout, which columns are shown, the
-            weight unit, the date/time format, the page size, and whether
-            a min/max/average/net-change summary line is printed.
+            weight unit, the date/time format, the page size, whether a
+            min/max/average/net-change summary line is printed, and whether
+            a body composition snapshot is included.
         patient_config: Optional patient name/email to print below the
-            title; fields left blank are omitted.
+            title; fields left blank are omitted. Height/birthdate/sex are
+            required (validated by the caller) if
+            ``report_config.include_body_metrics`` is set.
     """
     styles = getSampleStyleSheet()
     doc = SimpleDocTemplate(output_path, pagesize=_PAGE_SIZES[report_config.page_size])
@@ -556,6 +667,11 @@ def build_pdf(
         if summary:
             elements.append(Paragraph(summary, styles["Normal"]))
     elements.append(Spacer(1, 0.25 * inch))
+
+    if report_config.include_body_metrics:
+        elements.extend(
+            _build_body_metrics_elements(rows, report_config, patient_config, styles)
+        )
 
     if report_config.layout == "simple":
         elements.append(_build_simple_table(rows, report_config))
@@ -725,6 +841,32 @@ def main(argv: list[str] | None = None) -> int:
             patient_config = load_patient_config(args.config)
         except ConfigError as exc:
             print(f"Error: {exc}")
+            return 1
+
+    # Body metrics only render on the single-scale PDF path (not CSV, not
+    # --multi-scale, which has no single patient profile to apply) -- only
+    # require the fields it needs there, so e.g. a CSV export isn't blocked
+    # by patient info it will never use.
+    renders_body_metrics = (
+        report_config.include_body_metrics
+        and args.format != "csv"
+        and not args.multi_scale
+    )
+    if renders_body_metrics:
+        missing = [
+            name
+            for name, value in (
+                ("height_m", patient_config.height_m),
+                ("birthdate", patient_config.birthdate),
+                ("sex", patient_config.sex),
+            )
+            if not value
+        ]
+        if missing:
+            print(
+                "Error: report.include_body_metrics is enabled but [patient] "
+                f"{', '.join(missing)} must be set"
+            )
             return 1
 
     start, end = _resolve_range(args.period, args.from_date, args.to_date)

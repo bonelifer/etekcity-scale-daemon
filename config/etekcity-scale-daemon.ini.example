@@ -57,8 +57,23 @@ page_size = letter
 # below the title. Defaults to no.
 include_summary = no
 
+# Print a body composition snapshot (BMI, body fat %, muscle mass, etc.,
+# via the upstream library's calculations) for the most recent reading
+# that has impedance data. Requires [patient] height_m, birthdate, and sex
+# to all be set below. PDF only; has no effect on --format csv or
+# --multi-scale reports (body metrics assume one shared patient profile).
+include_body_metrics = no
+
 [patient]
 # Optional patient name/email printed below the title in PDF reports, e.g.
 # for handing a report to a doctor. Leave either blank to omit that line.
 name =
 email =
+
+# Required only if report.include_body_metrics = yes.
+height_m =
+birthdate =
+# male or female
+sex =
+# yes or no -- affects the body-fat-percentage calculation
+athlete = no

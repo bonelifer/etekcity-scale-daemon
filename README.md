@@ -77,8 +77,13 @@ Leave `[scale] address` and `model` empty to auto-discover a scale on first run 
 | `report` | `date_format` | `us` (MM/DD/YYYY, 12-hour) or `world` (DD/MM/YYYY, 24-hour). |
 | `report` | `page_size` | PDF page size: `letter` or `a4`. |
 | `report` | `include_summary` | Print a min/max/average/net-change summary line for Weight below the title: `yes` or `no`. Defaults to `no`. |
+| `report` | `include_body_metrics` | Print a BMI/body-fat/etc. snapshot for the latest impedance reading: `yes` or `no`. Requires `[patient] height_m`/`birthdate`/`sex`. PDF only. Defaults to `no`. |
 | `patient` | `name` | Patient name printed below the title in PDF reports. Leave blank to omit. |
 | `patient` | `email` | Patient email printed below the title in PDF reports. Leave blank to omit. |
+| `patient` | `height_m` | Height in meters. Required if `include_body_metrics = yes`. |
+| `patient` | `birthdate` | `YYYY-MM-DD`. Required if `include_body_metrics = yes` (age is computed fresh from this on every report). |
+| `patient` | `sex` | `male` or `female`. Required if `include_body_metrics = yes`. |
+| `patient` | `athlete` | `yes` or `no`. Affects the body-fat-percentage calculation. Defaults to `no`. |
 
 #### systemd service
 
@@ -211,7 +216,9 @@ Add `--format csv` for a CSV file instead of a PDF (default output path becomes 
 etekcity-scale-report --config /etc/etekcity-scale-daemon/config.ini --format csv --output report.csv
 ```
 
-CSV export always uses the `full` layout's column set (respecting `include_address`/`include_model`/`include_impedance`/`include_heart_rate`, `weight_unit`, and `date_format`) — `layout`, `page_size`, `include_summary`, and `[patient]` are PDF-only and have no effect on CSV.
+CSV export always uses the `full` layout's column set (respecting `include_address`/`include_model`/`include_impedance`/`include_heart_rate`, `weight_unit`, and `date_format`) — `layout`, `page_size`, `include_summary`, `include_body_metrics`, and `[patient]` are PDF-only and have no effect on CSV.
+
+Set `report.include_body_metrics = yes` (plus `[patient] height_m`/`birthdate`/`sex`) for a "Body Composition" section — BMI, body fat %, muscle mass, bone mass, and the rest of the upstream library's `BodyMetrics` calculations, computed from the single most recent reading that has impedance data. It's a current snapshot, not a per-reading history, and only applies to single-scale PDF reports — it's skipped for `--format csv` (no [patient] context there) and for `--multi-scale` (which can represent readings from different people, so one shared height/birthdate/sex wouldn't make sense).
 
 The layout, which columns appear, the weight unit, and the date/time format are all controlled by the `[report]` section of the config file (see the table above) — `--config` reads them, `--db` always uses the defaults (`full` layout, all columns, kilograms, `world` date format).
 
