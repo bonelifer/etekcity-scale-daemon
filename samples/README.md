@@ -29,10 +29,18 @@ The `simple` layout is always date/weight only, regardless of `include_address`/
 
 All other `full` layout samples above show every optional column (the default).
 
+## Chart layout
+
+| File | Layout | Weight unit | Date format |
+|---|---|---|---|
+| [chart-kg-world.pdf](chart-kg-world.pdf) | chart | kg | world |
+
+A line chart of weight over time instead of a table. `include_address`/`include_model`/`include_impedance`/`include_heart_rate` have no effect on this layout.
+
 ## Regenerating
 
 ```bash
 etekcity-scale-report --config /path/to/config.ini --output samples/<name>.pdf
 ```
 
-See the main [README](../README.md#pdf-reports) for the full list of `[report]` options.
+See the main [README](../README.md#reports) for the full list of `[report]` options.
