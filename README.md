@@ -84,6 +84,14 @@ Leave `[scale] address` and `model` empty to auto-discover a scale on first run 
 | `patient` | `birthdate` | `YYYY-MM-DD`. Required if `include_body_metrics = yes` (age is computed fresh from this on every report). |
 | `patient` | `sex` | `male` or `female`. Required if `include_body_metrics = yes`. |
 | `patient` | `athlete` | `yes` or `no`. Affects the body-fat-percentage calculation. Defaults to `no`. |
+| `mqtt` | `enabled` | Publish each measurement to MQTT as JSON: `yes` or `no`. Defaults to `no`. |
+| `mqtt` | `host` | Broker hostname. Required if `enabled = yes`. |
+| `mqtt` | `port` | Broker port. Defaults to `1883`. |
+| `mqtt` | `username` / `password` | Optional broker credentials. |
+| `mqtt` | `use_tls` | Wrap the connection in TLS: `yes` or `no`. Defaults to `no`. |
+| `mqtt` | `topic_prefix` | Messages publish to `<topic_prefix>/<scale address>/state`. Defaults to `etekcity_scale_daemon`. |
+| `mqtt` | `qos` | MQTT QoS level: `0`, `1`, or `2`. Defaults to `0`. |
+| `mqtt` | `retain` | Whether the broker retains the last message for new subscribers: `yes` or `no`. Defaults to `yes`. |
 
 #### systemd service
 
@@ -269,6 +277,33 @@ etekcity-scale-prune --config /etc/etekcity-scale-daemon/config.ini --older-than
 ```
 
 Add `--address AA:BB:CC:DD:EE:FF` to restrict pruning to one scale. `--db` works the same as with `etekcity-scale-report`, bypassing the config file.
+
+## MQTT
+
+Set `[mqtt] enabled = yes` (plus `host`) to publish each measurement to an MQTT broker as JSON, alongside the local SQLite recording:
+
+```ini
+[mqtt]
+enabled = yes
+host = broker.example.com
+port = 1883
+username = myuser
+password = mypassword
+use_tls = no
+topic_prefix = etekcity_scale_daemon
+qos = 0
+retain = yes
+```
+
+Each measurement publishes to `<topic_prefix>/<scale address>/state`, e.g. `etekcity_scale_daemon/AA:BB:CC:DD:EE:FF/state`, with the same fields stored in the database:
+
+```json
+{"recorded_at": "2026-08-06T01:23:45.678901+00:00", "address": "AA:BB:CC:DD:EE:FF", "model": "ESF-551", "weight_kg": 75.0, "impedance_ohms": 500.0, "impedance_500khz_ohms": null, "heart_rate_bpm": null, "display_unit": "KG"}
+```
+
+A broker that's down or unreachable is logged as a warning and otherwise ignored — BLE recording to the local database is the daemon's primary job and is never blocked by an MQTT outage. Check `--check-config` to confirm the daemon parsed your `[mqtt]` settings as expected before relying on it.
+
+There's no Home Assistant MQTT discovery support yet (auto-creating entities) — this publishes raw JSON only. Subscribe and parse it yourself, or wire up discovery messages separately if you need that.
 
 ## Troubleshooting
 
