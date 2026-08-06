@@ -22,6 +22,7 @@ from .config import (
     load_api_config,
     load_config,
     load_patient_config,
+    load_profile_biometrics,
     load_profiles_config,
     load_report_config,
 )
@@ -32,12 +33,15 @@ _VALID_FORMATS = ("pdf", "csv")
 _VALID_PERIODS = ("7d", "30d", "90d", "1y", "all")
 
 
-def _latest_readings(db_path: str, address: str | None) -> list[dict[str, object]]:
+def _latest_readings(
+    db_path: str, address: str | None, profile: str | None = None
+) -> list[dict[str, object]]:
     """Return the most recent reading for each scale address.
 
     Args:
         db_path: Path to the SQLite database file.
         address: Restrict to a single scale's BLE address, if given.
+        profile: Restrict to readings tagged with this profile name, if given.
 
     Returns:
         One dict per scale, each with the same fields stored in the
@@ -54,6 +58,9 @@ def _latest_readings(db_path: str, address: str | None) -> list[dict[str, object
     if address:
         query += " AND address = ?"
         params.append(address)
+    if profile:
+        query += " AND profile = ?"
+        params.append(profile)
 
     connection = sqlite3.connect(db_path)
     try:
@@ -103,12 +110,16 @@ async def handle_health(request: web.Request) -> web.Response:
 
 
 async def handle_latest(request: web.Request) -> web.Response:
-    """GET /latest[?address=...] -- most recent reading per scale, as JSON."""
+    """GET /latest[?address=...&profile=...] -- most recent reading per scale, as JSON."""
     unauthorized = _require_auth(request)
     if unauthorized is not None:
         return unauthorized
 
-    readings = _latest_readings(request.app["db_path"], request.query.get("address"))
+    readings = _latest_readings(
+        request.app["db_path"],
+        request.query.get("address"),
+        request.query.get("profile"),
+    )
     if not readings:
         return web.json_response({"error": "no readings found"}, status=404)
     return web.json_response(readings)
@@ -145,10 +156,14 @@ async def handle_assign_profile(request: web.Request) -> web.Response:
 
 
 async def handle_report(request: web.Request) -> web.Response:
-    """GET /report[?format=pdf|csv&period=...&from=...&to=...&address=...].
+    """GET /report[?format=pdf|csv&period=...&from=...&to=...&address=...&profile=...].
 
     Generates a report on demand using the same config-driven settings as
-    ``etekcity-scale-report`` and returns it as a file download.
+    ``etekcity-scale-report`` and returns it as a file download. When
+    ``profile`` is given, biometrics come from that profile's
+    ``[profile.<name>]`` section instead of ``[patient]`` -- never a
+    silent fallback, since defaulting to someone else's biometrics would
+    be a correctness bug, not a convenience.
     """
     unauthorized = _require_auth(request)
     if unauthorized is not None:
@@ -173,7 +188,39 @@ async def handle_report(request: web.Request) -> web.Response:
     except ValueError as exc:
         return web.json_response({"error": f"invalid date: {exc}"}, status=400)
 
-    rows = fetch_rows(request.app["db_path"], request.query.get("address"), start, end)
+    profile = request.query.get("profile")
+    patient_config = request.app["patient_config"]
+    biometrics_section = "patient"
+    if profile:
+        try:
+            patient_config = load_profile_biometrics(request.app["config_path"], profile)
+        except ConfigError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        biometrics_section = f"profile.{profile}"
+
+    report_config = request.app["report_config"]
+    if report_config.include_body_metrics and fmt != "csv":
+        missing = [
+            name
+            for name, value in (
+                ("height_m", patient_config.height_m),
+                ("birthdate", patient_config.birthdate),
+                ("sex", patient_config.sex),
+            )
+            if not value
+        ]
+        if missing:
+            return web.json_response(
+                {
+                    "error": (
+                        f"report.include_body_metrics is enabled but "
+                        f"[{biometrics_section}] {', '.join(missing)} must be set"
+                    )
+                },
+                status=400,
+            )
+
+    rows = fetch_rows(request.app["db_path"], request.query.get("address"), start, end, profile)
     if not rows:
         return web.json_response(
             {"error": "no measurements found for the given range/filters"}, status=404
@@ -183,15 +230,10 @@ async def handle_report(request: web.Request) -> web.Response:
     os.close(fd)
     try:
         if fmt == "csv":
-            build_csv(rows, temp_path, request.app["report_config"])
+            build_csv(rows, temp_path, report_config)
             content_type = "text/csv"
         else:
-            build_pdf(
-                rows,
-                temp_path,
-                request.app["report_config"],
-                request.app["patient_config"],
-            )
+            build_pdf(rows, temp_path, report_config, patient_config)
             content_type = "application/pdf"
         with open(temp_path, "rb") as report_file:
             body = report_file.read()
@@ -208,11 +250,18 @@ async def handle_report(request: web.Request) -> web.Response:
 
 
 def build_app(
-    db_path: str, api_config: ApiConfig, report_config, patient_config, profiles_config
+    config_path: str,
+    db_path: str,
+    api_config: ApiConfig,
+    report_config,
+    patient_config,
+    profiles_config,
 ) -> web.Application:
     """Build the aiohttp application with routes and shared state attached.
 
     Args:
+        config_path: Path to the INI configuration file, used to load a
+            specific profile's biometrics on demand.
         db_path: Path to the SQLite database file.
         api_config: Supplies the auth token.
         report_config: Used for on-demand report generation.
@@ -223,6 +272,7 @@ def build_app(
         A configured, unstarted aiohttp Application.
     """
     app = web.Application()
+    app["config_path"] = config_path
     app["db_path"] = db_path
     app["api_token"] = api_config.token
     app["report_config"] = report_config
@@ -281,7 +331,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     ensure_schema(db_path)
-    app = build_app(db_path, api_config, report_config, patient_config, profiles_config)
+    app = build_app(
+        args.config, db_path, api_config, report_config, patient_config, profiles_config
+    )
     print(f"Listening on http://{api_config.host}:{api_config.port}")
     web.run_app(app, host=api_config.host, port=api_config.port, print=None)
     return 0

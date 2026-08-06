@@ -154,3 +154,22 @@ api_base_url = http://127.0.0.1:8080
 # Seconds to wait for a dunstify response before giving up. Only used
 # when [api] is disabled.
 dunstify_timeout_seconds = 30
+
+# One [profile.<name>] section per name listed in [profiles] names above,
+# for per-person body composition (report.include_body_metrics /
+# etekcity-scale-report --profile <name> / the API's ?profile= filter).
+# Same fields as [patient] below, but never falls back to it -- a missing
+# or incomplete section is treated as an error for that profile rather
+# than silently reusing someone else's height/sex.
+#
+# [profile.Alice]
+# height_m = 1.65
+# birthdate = 1990-04-12
+# sex = female
+# athlete = no
+#
+# [profile.Bob]
+# height_m = 1.80
+# birthdate = 1988-11-02
+# sex = male
+# athlete = no

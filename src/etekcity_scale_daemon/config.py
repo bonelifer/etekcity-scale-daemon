@@ -312,6 +312,91 @@ def load_report_config(config_path: str) -> ReportConfig:
     )
 
 
+def _parse_biometrics(
+    section: configparser.SectionProxy, key_prefix: str
+) -> tuple[float, date | None, str, bool]:
+    """Parse height_m/birthdate/sex/athlete, shared by [patient] and [profile.*].
+
+    Args:
+        section: The configparser section to read from.
+        key_prefix: Dotted prefix used in error messages, e.g. ``"patient"``
+            or ``"profile.Alice"``.
+
+    Returns:
+        A ``(height_m, birthdate, sex, athlete)`` tuple.
+
+    Raises:
+        ConfigError: If any field is set but invalid.
+    """
+    height_m_str = section.get("height_m", "").strip()
+    height_m = 0.0
+    if height_m_str:
+        try:
+            height_m = float(height_m_str)
+        except ValueError as exc:
+            raise ConfigError(f"{key_prefix}.height_m must be a number") from exc
+        if height_m <= 0:
+            raise ConfigError(f"{key_prefix}.height_m must be a positive number")
+
+    birthdate_str = section.get("birthdate", "").strip()
+    birthdate = None
+    if birthdate_str:
+        try:
+            birthdate = datetime.strptime(birthdate_str, "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise ConfigError(f"{key_prefix}.birthdate must be in YYYY-MM-DD format") from exc
+
+    sex = section.get("sex", "").strip().lower()
+    if sex and sex not in _SEXES:
+        raise ConfigError(f"{key_prefix}.sex must be one of {_SEXES}, got {sex!r}")
+
+    athlete = _parse_bool(section.get("athlete", "no"), f"{key_prefix}.athlete")
+
+    return height_m, birthdate, sex, athlete
+
+
+def load_profile_biometrics(config_path: str, profile: str) -> PatientConfig:
+    """Load the ``[profile.<name>]`` section's biometrics for one profile.
+
+    Unlike ``[patient]``, this never falls back to defaults silently when
+    fields are missing -- callers should treat an incomplete section as a
+    configuration error for that specific profile rather than silently
+    reusing someone else's biometrics.
+
+    Args:
+        config_path: Path to the INI configuration file.
+        profile: The profile name, expected to match one of the names in
+            ``[profiles] names``.
+
+    Returns:
+        A ``PatientConfig`` with ``name`` set to the profile name, ``email``
+        blank, and height/birthdate/sex/athlete from ``[profile.<name>]``
+        (all "unset" defaults if that section doesn't exist at all).
+
+    Raises:
+        ConfigError: If the file is missing or a value is invalid.
+    """
+    path = Path(config_path)
+    if not path.is_file():
+        raise ConfigError(f"Config file not found: {path}")
+
+    parser = configparser.ConfigParser()
+    parser.read(path)
+
+    section_name = f"profile.{profile}"
+    if not parser.has_section(section_name):
+        return PatientConfig(
+            name=profile, email="", height_m=0.0, birthdate=None, sex="", athlete=False
+        )
+
+    height_m, birthdate, sex, athlete = _parse_biometrics(
+        parser[section_name], section_name
+    )
+    return PatientConfig(
+        name=profile, email="", height_m=height_m, birthdate=birthdate, sex=sex, athlete=athlete
+    )
+
+
 def load_patient_config(config_path: str) -> PatientConfig:
     """Load the ``[patient]`` section of the daemon config file, if present.
 
@@ -339,28 +424,7 @@ def load_patient_config(config_path: str) -> PatientConfig:
         return DEFAULT_PATIENT_CONFIG
 
     patient = parser["patient"]
-
-    height_m_str = patient.get("height_m", "").strip()
-    height_m = 0.0
-    if height_m_str:
-        try:
-            height_m = float(height_m_str)
-        except ValueError as exc:
-            raise ConfigError("patient.height_m must be a number") from exc
-        if height_m <= 0:
-            raise ConfigError("patient.height_m must be a positive number")
-
-    birthdate_str = patient.get("birthdate", "").strip()
-    birthdate = None
-    if birthdate_str:
-        try:
-            birthdate = datetime.strptime(birthdate_str, "%Y-%m-%d").date()
-        except ValueError as exc:
-            raise ConfigError("patient.birthdate must be in YYYY-MM-DD format") from exc
-
-    sex = patient.get("sex", "").strip().lower()
-    if sex and sex not in _SEXES:
-        raise ConfigError(f"patient.sex must be one of {_SEXES}, got {sex!r}")
+    height_m, birthdate, sex, athlete = _parse_biometrics(patient, "patient")
 
     return PatientConfig(
         name=patient.get("name", "").strip(),
@@ -368,7 +432,7 @@ def load_patient_config(config_path: str) -> PatientConfig:
         height_m=height_m,
         birthdate=birthdate,
         sex=sex,
-        athlete=_parse_bool(patient.get("athlete", "no"), "patient.athlete"),
+        athlete=athlete,
     )
 
 

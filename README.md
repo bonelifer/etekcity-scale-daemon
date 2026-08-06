@@ -107,6 +107,7 @@ Leave `[scale] address` and `model` empty to auto-discover a scale on first run 
 | `profiles` | `ntfy_token` | Optional ntfy access token. |
 | `profiles` | `api_base_url` | Where this API is reachable, for ntfy's action buttons to call back into. |
 | `profiles` | `dunstify_timeout_seconds` | Seconds to wait for a local dunstify response. Only used when `[api] enabled = no`. Defaults to `30`. |
+| `profile.<name>` | `height_m` / `birthdate` / `sex` / `athlete` | Same fields as `[patient]`, but per profile -- used for that person's body composition. One section per name in `profiles.names`. Never falls back to `[patient]`. |
 
 #### systemd service
 
@@ -220,7 +221,7 @@ curl -H "Authorization: Bearer <token>" http://127.0.0.1:8080/latest
 
 ### Profiles
 
-For a scale shared by more than one person: `[profiles]` asks "who was this?" after each reading and tags it, so reports and body-metrics calculations (which assume one person, see the body-composition note above) can eventually be filtered per person. There's no way to identify who's standing on the scale automatically -- no camera, no button, nothing but a weight number -- so this asks a human directly instead of guessing from a weight range.
+For a scale shared by more than one person: `[profiles]` asks "who was this?" after each reading and tags it, so reports and body-metrics calculations (which otherwise assume one person, see the body-composition note above) can be filtered and computed per person. There's no way to identify who's standing on the scale automatically -- no camera, no button, nothing but a weight number -- so this asks a human directly instead of guessing from a weight range.
 
 Two delivery paths, chosen automatically based on whether `[api]` is enabled:
 
@@ -240,6 +241,17 @@ api_base_url = http://127.0.0.1:8080
 ```bash
 curl "http://127.0.0.1:8080/assign-profile?id=42&profile=Alice"
 ```
+
+#### Per-profile body composition
+
+Give each profile its own `[profile.<name>]` section (same `height_m`/`birthdate`/`sex`/`athlete` fields as `[patient]`) and both the report CLI and the API can compute body composition for the right person instead of whoever's in `[patient]`:
+
+```bash
+etekcity-scale-report --config /etc/etekcity-scale-daemon/config.ini --profile Alice --output alice-report.pdf
+curl -o alice-report.pdf "http://127.0.0.1:8080/report?profile=Alice"
+```
+
+`--profile`/`?profile=` also filters which readings are included (only ones tagged with that name), not just which biometrics get used. This never falls back to `[patient]` when a profile's section is missing or incomplete -- that would mean silently computing Bob's body fat percentage using Alice's height, which is a correctness bug, not a convenience, so it's a clear error instead.
 
 Why ntfy specifically: unlike most notification services, ntfy's `http` action type is a full HTTP request (URL, method, headers, body) fired directly when the button is tapped -- the notification service itself is the callback mechanism, no separate bot or polling process needed. Pushover only supports a single acknowledge callback tied to emergency-priority alerts, Pushbullet's actionable notifications are about mirroring your own devices rather than third-party callbacks, and Gotify has no equivalent at all. [Apprise](https://github.com/caronc/apprise) (used for [alerting](#alerting)) isn't used here either -- its unified API has no concept of actions since it targets 100+ services and most have nothing like this.
 
