@@ -54,6 +54,27 @@ def ensure_schema(db_path: str) -> None:
         connection.close()
 
 
+def get_measurement_recorded_at(db_path: str, row_id: int) -> str | None:
+    """Look up a measurement's recorded_at timestamp, without modifying it.
+
+    Args:
+        db_path: Filesystem path to the SQLite database file.
+        row_id: The measurement's primary key, as returned by ``record()``.
+
+    Returns:
+        The stored ISO-8601 ``recorded_at`` string, or None if no row
+        matches ``row_id``.
+    """
+    connection = sqlite3.connect(db_path)
+    try:
+        row = connection.execute(
+            "SELECT recorded_at FROM measurements WHERE id = ?", (row_id,)
+        ).fetchone()
+        return row[0] if row is not None else None
+    finally:
+        connection.close()
+
+
 def set_measurement_profile(db_path: str, row_id: int, profile: str) -> bool:
     """Tag a previously recorded measurement with a profile name.
 

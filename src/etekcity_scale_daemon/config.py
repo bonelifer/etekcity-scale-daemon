@@ -173,6 +173,7 @@ class ProfilesConfig:
     ntfy_token: str
     api_base_url: str
     dunstify_timeout_seconds: int
+    assign_window_seconds: int  # 0 disables the staleness check
 
 
 DEFAULT_PROFILES_CONFIG = ProfilesConfig(
@@ -182,6 +183,7 @@ DEFAULT_PROFILES_CONFIG = ProfilesConfig(
     ntfy_token="",
     api_base_url="http://127.0.0.1:8080",
     dunstify_timeout_seconds=30,
+    assign_window_seconds=0,
 )
 
 
@@ -620,6 +622,18 @@ def load_profiles_config(config_path: str) -> ProfilesConfig:
     except ValueError as exc:
         raise ConfigError("profiles.dunstify_timeout_seconds must be an integer") from exc
 
+    try:
+        assign_window_seconds = int(
+            profiles.get(
+                "assign_window_seconds",
+                str(DEFAULT_PROFILES_CONFIG.assign_window_seconds),
+            )
+        )
+    except ValueError as exc:
+        raise ConfigError("profiles.assign_window_seconds must be an integer") from exc
+    if assign_window_seconds < 0:
+        raise ConfigError("profiles.assign_window_seconds must be zero or positive")
+
     return ProfilesConfig(
         enabled=enabled,
         names=names,
@@ -630,6 +644,7 @@ def load_profiles_config(config_path: str) -> ProfilesConfig:
             or DEFAULT_PROFILES_CONFIG.api_base_url
         ),
         dunstify_timeout_seconds=dunstify_timeout_seconds,
+        assign_window_seconds=assign_window_seconds,
     )
 
 

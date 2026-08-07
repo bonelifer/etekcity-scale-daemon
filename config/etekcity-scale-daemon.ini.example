@@ -141,6 +141,12 @@ api_base_url = http://127.0.0.1:8080
 # Seconds to wait for a dunstify response before giving up. Only used
 # when [api] is disabled.
 dunstify_timeout_seconds = 30
+# Reject /assign-profile requests tagging a reading older than this many
+# seconds, unless &confirm=1 is also passed. Guards against a delayed
+# ntfy notification -- tapped long after it was sent, once connectivity
+# returns -- silently tagging a now-stale reading. 0 disables the check
+# (the default). Only relevant when [api] is enabled.
+assign_window_seconds = 0
 
 # One [profile.<name>] section per name listed in [profiles] names above:
 # optional name/email printed below the title in PDF reports (e.g. for
