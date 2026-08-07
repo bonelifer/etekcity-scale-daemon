@@ -101,6 +101,7 @@ Leave `[scale] address` and `model` empty to auto-discover a scale on first run 
 | `profiles` | `ntfy_token` | Optional ntfy access token. |
 | `profiles` | `api_base_url` | Where this API is reachable, for ntfy's action buttons to call back into. |
 | `profiles` | `dunstify_timeout_seconds` | Seconds to wait for a local dunstify response. Only used when `[api] enabled = no`. Defaults to `30`. |
+| `profiles` | `assign_window_seconds` | Reject `/assign-profile` requests tagging a reading older than this many seconds, unless `&confirm=1` is also passed. `0` disables the check. Defaults to `0`. |
 | `profile.<name>` | `name` / `email` | Optional, printed below the title in PDF reports when this profile is selected. Leave blank to omit; `name` defaults to the profile's own name (e.g. `Alice`) if left blank. |
 | `profile.<name>` | `height_unit` | Unit that `height` below is written in: `m`, `cm`, or `in`. Defaults to `m`. |
 | `profile.<name>` | `height` / `birthdate` / `sex` / `athlete` | Required for this person's body composition if `report.include_body_metrics = yes`. One section per name in `profiles.names`. Never falls back to another profile's values. |
@@ -237,6 +238,12 @@ api_base_url = http://127.0.0.1:8080
 
 ```bash
 curl "http://127.0.0.1:8080/assign-profile?id=42&profile=Alice"
+```
+
+If `profiles.assign_window_seconds` is set, this fails with `409` for a reading older than that window -- a safety net for delayed ntfy notifications (tapped long after connectivity returns, potentially tagging a now-stale reading someone's forgotten about) rather than a limit on manual corrections. Add `&confirm=1` to tag an old reading on purpose:
+
+```bash
+curl "http://127.0.0.1:8080/assign-profile?id=42&profile=Alice&confirm=1"
 ```
 
 #### Per-profile body composition
