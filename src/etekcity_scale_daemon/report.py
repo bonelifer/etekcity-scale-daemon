@@ -646,6 +646,92 @@ def _build_body_metrics_elements(
     ]
 
 
+def _build_goal_progress_elements(
+    rows: list[ReportRow],
+    report_config: ReportConfig,
+    patient_config: PatientConfig,
+    styles,
+) -> list:
+    """Build a "Goal Progress" heading and summary for this profile's goal_weight.
+
+    Uses the first and last weighed readings in the report's range to
+    estimate a rate of change and project days remaining -- a rough
+    trend, not a statistical forecast.
+
+    Args:
+        rows: Measurement rows to include, oldest first.
+        report_config: Supplies the weight unit to render values in.
+        patient_config: Supplies the profile's goal_weight_kg, if set.
+        styles: The document's reportlab stylesheet.
+
+    Returns:
+        Flowables to append: a note if no goal is set or no weighed
+        readings exist, otherwise a heading + progress summary.
+    """
+    if patient_config.goal_weight_kg is None:
+        return [
+            Paragraph(
+                "Goal progress: no goal_weight set for this profile.",
+                styles["Normal"],
+            ),
+            Spacer(1, 0.15 * inch),
+        ]
+
+    weighed = [row for row in rows if row.weight_kg is not None]
+    if not weighed:
+        return [
+            Paragraph(
+                "Goal progress: no weighed readings in this report's range.",
+                styles["Normal"],
+            ),
+            Spacer(1, 0.15 * inch),
+        ]
+
+    weight_factor, weight_label = _WEIGHT_CONVERSIONS[report_config.weight_unit]
+    current_kg = weighed[-1].weight_kg
+    goal_display = patient_config.goal_weight_kg * weight_factor
+    current_display = current_kg * weight_factor
+    remaining_display = current_display - goal_display
+
+    if remaining_display > 0:
+        remaining_note = f"{remaining_display:.2f} {weight_label} to lose"
+    elif remaining_display < 0:
+        remaining_note = f"{abs(remaining_display):.2f} {weight_label} to gain"
+    else:
+        remaining_note = "at goal"
+
+    lines = [
+        f"Current: {current_display:.2f} {weight_label}",
+        f"Goal: {goal_display:.2f} {weight_label}",
+        f"Remaining: {remaining_note}",
+    ]
+
+    if len(weighed) >= 2:
+        first_kg = weighed[0].weight_kg
+        days_elapsed = (
+            weighed[-1].recorded_at - weighed[0].recorded_at
+        ).total_seconds() / 86400
+        rate_kg_per_day = (current_kg - first_kg) / days_elapsed if days_elapsed > 0 else 0.0
+        if rate_kg_per_day == 0:
+            lines.append("No change in weight over this report's range.")
+        else:
+            projected_days = (patient_config.goal_weight_kg - current_kg) / rate_kg_per_day
+            if projected_days > 0:
+                lines.append(
+                    "At the current rate of change, projected to reach goal in "
+                    f"about {projected_days:.0f} day(s)."
+                )
+            else:
+                lines.append("Trending away from goal at the current rate of change.")
+
+    return [
+        Paragraph("Goal Progress", styles["Heading2"]),
+        Spacer(1, 0.05 * inch),
+        *(Paragraph(line, styles["Normal"]) for line in lines),
+        Spacer(1, 0.15 * inch),
+    ]
+
+
 def build_pdf(
     rows: list[ReportRow],
     output_path: str,
@@ -660,7 +746,7 @@ def build_pdf(
         report_config: Controls the layout, which columns are shown, the
             weight unit, the date/time format, the page size, whether a
             min/max/average/net-change summary line is printed, and whether
-            a body composition snapshot is included.
+            a body composition snapshot and/or goal progress are included.
         patient_config: Optional patient name/email to print below the
             title; fields left blank are omitted. Height/birthdate/sex are
             required (validated by the caller) if
@@ -689,6 +775,11 @@ def build_pdf(
     if report_config.include_body_metrics:
         elements.extend(
             _build_body_metrics_elements(rows, report_config, patient_config, styles)
+        )
+
+    if report_config.include_goal_progress:
+        elements.extend(
+            _build_goal_progress_elements(rows, report_config, patient_config, styles)
         )
 
     if report_config.layout == "simple":
