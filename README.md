@@ -225,6 +225,8 @@ curl -H "Authorization: Bearer <token>" http://127.0.0.1:8080/latest
 
 For a scale shared by more than one person: `[profiles]` asks "who was this?" after each reading and tags it, so reports and body-metrics calculations (which otherwise assume one person, see the body-composition note above) can be filtered and computed per person. There's no way to identify who's standing on the scale automatically -- no camera, no button, nothing but a weight number -- so this asks a human directly instead of guessing from a weight range. Set `report.include_profile = yes` to show who each reading belongs to in a report that spans every profile at once, rather than filtering to just one via `--profile`/`?profile=`.
 
+`--check-config` cross-checks `profiles.names` against the database: if a profile name was removed or renamed but readings tagged with the old name still exist, it prints a warning (not an error -- exit code stays `0`) so that history doesn't just silently stop being explainable.
+
 Two delivery paths, chosen automatically based on whether `[api]` is enabled:
 
 - **`[api]` enabled** -- an [ntfy](https://ntfy.sh) notification with one HTTP action button per name in `profiles.names`. Tapping a button hits this API's `/assign-profile` endpoint directly, tagging that specific reading. Requires `profiles.ntfy_url` (and `profiles.api_base_url` pointing at wherever the API is actually reachable from your phone/desktop -- `127.0.0.1` only works if ntfy and the API run on the same machine).
