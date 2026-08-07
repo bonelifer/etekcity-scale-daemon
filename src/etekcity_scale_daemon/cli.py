@@ -170,6 +170,16 @@ async def _publish_measurement(
         _LOGGER.warning("MQTT publish to %s failed: %s", topic, exc)
 
 
+_NTFY_RETRY_DELAYS_SECONDS = (1, 2)
+_NTFY_REQUEST_TIMEOUT_SECONDS = 5
+# Worst case: every attempt hangs for the full per-request timeout, plus
+# every retry delay in between -- used to size the daemon's shutdown wait
+# for a still-retrying notification (see run_daemon's finally block).
+_NTFY_MAX_RETRY_SECONDS = _NTFY_REQUEST_TIMEOUT_SECONDS * (
+    len(_NTFY_RETRY_DELAYS_SECONDS) + 1
+) + sum(_NTFY_RETRY_DELAYS_SECONDS)
+
+
 async def _notify_via_ntfy(
     row_id: int, weight_kg: float | None, profiles_config: ProfilesConfig
 ) -> None:
@@ -178,6 +188,13 @@ async def _notify_via_ntfy(
     Each action calls back into the local HTTP API's ``/assign-profile``
     endpoint when tapped, so the actual tagging happens later (whenever a
     human responds), not here.
+
+    Retries up to twice (after 1s, then 2s) on a connection failure or a
+    5xx server response, since those are often transient (e.g. the ntfy
+    server restarting) -- without this, a brief outage at exactly the
+    wrong moment meant that reading could only ever be tagged manually. A
+    4xx response is never retried, since trying again won't fix a bad
+    token or malformed request.
 
     Args:
         row_id: The measurement's primary key, to tag once a profile is chosen.
@@ -214,17 +231,33 @@ async def _notify_via_ntfy(
         ],
     }
 
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(ntfy_root, json=payload, headers=headers) as response:
-                if response.status >= 400:
-                    _LOGGER.warning(
-                        "ntfy publish failed with HTTP %s: %s",
-                        response.status,
-                        await response.text(),
-                    )
-    except aiohttp.ClientError as exc:
-        _LOGGER.warning("ntfy publish failed: %s", exc)
+    last_error = None
+    for attempt in range(len(_NTFY_RETRY_DELAYS_SECONDS) + 1):
+        if attempt > 0:
+            await asyncio.sleep(_NTFY_RETRY_DELAYS_SECONDS[attempt - 1])
+        try:
+            timeout = aiohttp.ClientTimeout(total=_NTFY_REQUEST_TIMEOUT_SECONDS)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(ntfy_root, json=payload, headers=headers) as response:
+                    if response.status >= 500:
+                        last_error = f"HTTP {response.status}: {await response.text()}"
+                        continue
+                    if response.status >= 400:
+                        _LOGGER.warning(
+                            "ntfy publish failed with HTTP %s: %s",
+                            response.status,
+                            await response.text(),
+                        )
+                    return
+        except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+            last_error = str(exc) or repr(exc)
+            continue
+
+    _LOGGER.warning(
+        "ntfy publish failed after %d attempt(s): %s",
+        len(_NTFY_RETRY_DELAYS_SECONDS) + 1,
+        last_error,
+    )
 
 
 async def _prompt_via_dunstify(
@@ -428,15 +461,18 @@ async def run_daemon(
             await scale.async_stop()
             if background_tasks:
                 # A pending dunstify prompt can legitimately take up to its
-                # configured timeout to resolve; give it that long instead
-                # of cutting it off at the same 5s used for quick MQTT
-                # publishes, especially in --once mode where the stop event
-                # fires as soon as the measurement is recorded.
-                wait_timeout = (
-                    profiles_config.dunstify_timeout_seconds + 5
-                    if profiles_config.enabled and not api_config.enabled
-                    else 5
-                )
+                # configured timeout to resolve, and a retrying ntfy publish
+                # can take up to its own worst-case retry budget; give
+                # either that long instead of cutting it off at the same 5s
+                # used for quick MQTT publishes, especially in --once mode
+                # where the stop event fires as soon as the measurement is
+                # recorded.
+                if profiles_config.enabled and not api_config.enabled:
+                    wait_timeout = profiles_config.dunstify_timeout_seconds + 5
+                elif profiles_config.enabled and api_config.enabled:
+                    wait_timeout = _NTFY_MAX_RETRY_SECONDS
+                else:
+                    wait_timeout = 5
                 await asyncio.wait(background_tasks, timeout=wait_timeout)
             store.close()
 

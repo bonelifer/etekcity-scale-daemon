@@ -229,7 +229,7 @@ For a scale shared by more than one person: `[profiles]` asks "who was this?" af
 
 Two delivery paths, chosen automatically based on whether `[api]` is enabled:
 
-- **`[api]` enabled** -- an [ntfy](https://ntfy.sh) notification with one HTTP action button per name in `profiles.names`. Tapping a button hits this API's `/assign-profile` endpoint directly, tagging that specific reading. Requires `profiles.ntfy_url` (and `profiles.api_base_url` pointing at wherever the API is actually reachable from your phone/desktop -- `127.0.0.1` only works if ntfy and the API run on the same machine).
+- **`[api]` enabled** -- an [ntfy](https://ntfy.sh) notification with one HTTP action button per name in `profiles.names`. Tapping a button hits this API's `/assign-profile` endpoint directly, tagging that specific reading. Requires `profiles.ntfy_url` (and `profiles.api_base_url` pointing at wherever the API is actually reachable from your phone/desktop -- `127.0.0.1` only works if ntfy and the API run on the same machine). If the ntfy server is briefly unreachable or returns a 5xx error right when a reading happens, the publish is retried twice (after 1s, then 2s) before giving up and logging a warning -- a 4xx response (bad token, bad request) is never retried.
 - **`[api]` disabled** -- a local [dunstify](https://dunst-project.org) prompt instead, since ntfy's action buttons would have nothing to call back to without the API running. This resolves synchronously and tags the reading directly, no network round-trip. It needs the `dunst` notification daemon and a real desktop/D-Bus session -- it will not reach anywhere from a headless system service with no logged-in session, which is how the daemon runs by default.
 
 ```ini
