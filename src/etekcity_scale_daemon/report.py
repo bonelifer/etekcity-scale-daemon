@@ -659,6 +659,39 @@ def _build_body_metrics_elements(
     ]
 
 
+def _estimate_weight_rate_kg_per_day(weighed: list[ReportRow]) -> float:
+    """Estimate the rate of weight change via least-squares linear regression.
+
+    Fits a line through every weighed reading's (days since the first
+    reading, weight_kg) rather than just the first and last point, so one
+    outlier (e.g. a post-meal weigh-in landing on an endpoint) can't single-
+    handedly swing the whole estimate the way a bare 2-point slope would.
+    With exactly two points this reduces to that same 2-point slope, since
+    a line through two points *is* their least-squares fit.
+
+    Args:
+        weighed: Rows with a non-None weight_kg, at least one entry.
+
+    Returns:
+        Kilograms per day, positive for gaining, negative for losing. 0.0
+        if fewer than two distinct timestamps are present (a rate can't be
+        estimated from a single point in time).
+    """
+    if len(weighed) < 2:
+        return 0.0
+
+    t0 = weighed[0].recorded_at
+    xs = [(row.recorded_at - t0).total_seconds() / 86400 for row in weighed]
+    ys = [row.weight_kg for row in weighed]
+
+    mean_x = sum(xs) / len(xs)
+    mean_y = sum(ys) / len(ys)
+    numerator = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys))
+    denominator = sum((x - mean_x) ** 2 for x in xs)
+
+    return numerator / denominator if denominator > 0 else 0.0
+
+
 def _build_goal_progress_elements(
     rows: list[ReportRow],
     report_config: ReportConfig,
@@ -667,9 +700,9 @@ def _build_goal_progress_elements(
 ) -> list:
     """Build a "Goal Progress" heading and summary for this profile's goal_weight.
 
-    Uses the first and last weighed readings in the report's range to
-    estimate a rate of change and project days remaining -- a rough
-    trend, not a statistical forecast.
+    Uses a least-squares linear regression across every weighed reading in
+    the report's range to estimate a rate of change and project days
+    remaining -- a rough trend, not a statistical forecast.
 
     Args:
         rows: Measurement rows to include, oldest first.
@@ -720,11 +753,7 @@ def _build_goal_progress_elements(
     ]
 
     if len(weighed) >= 2:
-        first_kg = weighed[0].weight_kg
-        days_elapsed = (
-            weighed[-1].recorded_at - weighed[0].recorded_at
-        ).total_seconds() / 86400
-        rate_kg_per_day = (current_kg - first_kg) / days_elapsed if days_elapsed > 0 else 0.0
+        rate_kg_per_day = _estimate_weight_rate_kg_per_day(weighed)
         if rate_kg_per_day == 0:
             lines.append("No change in weight over this report's range.")
         else:
