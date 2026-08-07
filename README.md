@@ -1,12 +1,12 @@
 # etekcity-scale-daemon
 
-A standalone Linux daemon that connects to an Etekcity smart fitness scale over Bluetooth Low Energy (BLE) and logs its measurements to a local SQLite database — no cloud account, no companion app, and no Home Assistant required.
+A standalone Linux daemon that connects to an Etekcity smart fitness scale over Bluetooth Low Energy (BLE) and logs its measurements to a local SQLite database. No cloud account, no companion app, no Home Assistant required.
 
 It's a thin wrapper around the [`etekcity_esf551_ble`](https://github.com/ronnnnnnnnnnnnn/etekcity_esf551_ble) library, packaged to run unattended as a `systemd` service on something like a Raspberry Pi sitting near the scale.
 
 **Disclaimer: This is an unofficial, community-developed project. It is not affiliated with, officially maintained by, or in any way officially connected with Etekcity, VeSync Co., Ltd., or any of their subsidiaries or affiliates.**
 
-## Supported Scales
+## Supported scales
 
 Whatever the underlying library supports at the time of installation:
 
@@ -22,7 +22,7 @@ Whatever the underlying library supports at the time of installation:
 - Scans for any supported scale on first run, then pins its BLE address and model into the config file so future restarts connect directly instead of re-scanning
 - Records every measurement (weight, impedance, and heart rate where available) to a local SQLite database
 - Runs as a `systemd` service with automatic restart on failure
-- No body-metrics calculation or cloud sync — just raw readings, timestamped
+- No body-metrics calculation or cloud sync, just raw readings, timestamped
 
 ## Installation
 
@@ -36,7 +36,7 @@ cd etekcity-scale-daemon
 sudo ./install.sh
 ```
 
-This creates a venv at `/opt/etekcity-scale-daemon`, installs the package from the checkout, seeds `/etc/etekcity-scale-daemon/config.ini` (if it doesn't already exist), creates an `etekcity-scale-daemon` system user, and installs and enables the systemd service. It also installs (but does not enable) the [scheduled report generation](#scheduled-report-generation) and [alerting](#alerting) timer units, and the [HTTP API](#http-api) service. It's safe to re-run — it skips steps that are already done. Edit the config and `sudo systemctl restart etekcity-scale-daemon` afterward.
+This creates a venv at `/opt/etekcity-scale-daemon`, installs the package from the checkout, seeds `/etc/etekcity-scale-daemon/config.ini` (if it doesn't already exist), creates an `etekcity-scale-daemon` system user, and installs and enables the systemd service. It also installs (but does not enable) the [scheduled report generation](#scheduled-report-generation) and [alerting](#alerting) timer units, and the [HTTP API](#http-api) service. It's safe to re-run: it skips steps that are already done. Edit the config and `sudo systemctl restart etekcity-scale-daemon` afterward.
 
 ### Manual install
 
@@ -57,7 +57,7 @@ sudo cp config/etekcity-scale-daemon.ini.example /etc/etekcity-scale-daemon/conf
 sudo "$EDITOR" /etc/etekcity-scale-daemon/config.ini
 ```
 
-Leave `[scale] address` and `model` empty to auto-discover a scale on first run — step on the scale while the daemon is scanning. Once found, the daemon writes the address and model back into this file so it reconnects directly on every future start.
+Leave `[scale] address` and `model` empty to auto-discover a scale on first run (step on the scale while the daemon is scanning). Once found, the daemon writes the address and model back into this file so it reconnects directly on every future start.
 
 | Section | Key | Description |
 |---|---|---|
@@ -136,7 +136,7 @@ sudo journalctl -u etekcity-scale-daemon -f
 
 ### Scheduled report generation
 
-Optional and not enabled by default (`install.sh` installs the unit files but doesn't enable them). Generates a timestamped PDF to `/var/lib/etekcity-scale-daemon/reports/` on a schedule — there's no auto-email delivery, just a file dropped on disk; wire up your own delivery (e.g. a script that watches the directory) if you need that.
+Optional and not enabled by default (`install.sh` installs the unit files but doesn't enable them). Generates a timestamped PDF to `/var/lib/etekcity-scale-daemon/reports/` on a schedule. There's no auto-email delivery, just a file dropped on disk, so wire up your own delivery (e.g. a script that watches the directory) if you need that.
 
 ```bash
 sudo cp systemd/etekcity-scale-report-generate.service systemd/etekcity-scale-report-generate.timer /etc/systemd/system/
@@ -144,7 +144,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now etekcity-scale-report-generate.timer
 ```
 
-The timer defaults to `OnCalendar=weekly` (Monday 00:00) — edit `/etc/systemd/system/etekcity-scale-report-generate.timer` and `sudo systemctl daemon-reload` to change it. Override the config path or output directory with `ETEKCITY_CONFIG`/`ETEKCITY_REPORT_DIR` environment variables (add an `Environment=` line to the `.service` file's `[Service]` section). Check on it with:
+The timer defaults to `OnCalendar=weekly` (Monday 00:00). Edit `/etc/systemd/system/etekcity-scale-report-generate.timer` and `sudo systemctl daemon-reload` to change it. Override the config path or output directory with `ETEKCITY_CONFIG`/`ETEKCITY_REPORT_DIR` environment variables (add an `Environment=` line to the `.service` file's `[Service]` section). Check on it with:
 
 ```bash
 sudo systemctl list-timers etekcity-scale-report-generate.timer
@@ -159,12 +159,12 @@ Prefer cron instead of systemd timers? Skip the timer unit and add a crontab ent
 
 ### Alerting
 
-Also optional and not enabled by default. `etekcity-scale-alert-check` checks every scale's most recent readings for two conditions and notifies via [Apprise](https://github.com/caronc/apprise) (100+ supported services -- Discord, Telegram, Slack, email, Pushover, generic webhooks, etc.) when triggered:
+Also optional and not enabled by default. `etekcity-scale-alert-check` checks every scale's most recent readings for two conditions and notifies via [Apprise](https://github.com/caronc/apprise) (100+ supported services: Discord, Telegram, Slack, email, Pushover, generic webhooks, etc.) when triggered:
 
 - **Staleness**: no reading in over `stale_after_days` days.
 - **Weight swing**: the two most recent readings for a scale differ by more than `weight_swing_threshold_kg`.
 
-Both are disabled (`0`) by default -- set at least one to a positive value, plus `apprise_urls`, in the `[alerting]` section:
+Both are disabled (`0`) by default. Set at least one to a positive value, plus `apprise_urls`, in the `[alerting]` section:
 
 ```ini
 [alerting]
@@ -182,11 +182,11 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now etekcity-scale-alert-check.timer
 ```
 
-Defaults to `OnCalendar=hourly`. A repeat staleness alert is throttled to at most once per day while the condition persists; a weight-swing alert only fires once per newly-arrived reading, not on every check. State is tracked in `alerting.state_path` (default `/var/lib/etekcity-scale-daemon/alert-state.json`) -- delete it to reset throttling. `--check-config` reports whether `[alerting]` is enabled and how many URLs it parsed, without actually sending anything.
+Defaults to `OnCalendar=hourly`. A repeat staleness alert is throttled to at most once per day while the condition persists; a weight-swing alert only fires once per newly-arrived reading, not on every check. State is tracked in `alerting.state_path` (default `/var/lib/etekcity-scale-daemon/alert-state.json`). Delete it to reset throttling. `--check-config` reports whether `[alerting]` is enabled and how many URLs it parsed, without actually sending anything.
 
 ### HTTP API
 
-Also optional and not enabled by default. `etekcity-scale-api` runs a small read-only HTTP server exposing the same data as the other tools -- it reads the SQLite database directly and works whether or not the daemon is currently running.
+Also optional and not enabled by default. `etekcity-scale-api` runs a small read-only HTTP server exposing the same data as the other tools. It reads the SQLite database directly and works whether or not the daemon is currently running.
 
 ```ini
 [api]
@@ -215,7 +215,7 @@ curl http://127.0.0.1:8080/latest
 curl -o report.pdf "http://127.0.0.1:8080/report?period=30d"
 ```
 
-**There's no TLS built in.** `host` defaults to `127.0.0.1` (loopback only) for a reason -- don't bind it to `0.0.0.0` or a LAN-facing interface without putting a reverse proxy (with TLS and its own auth) in front of it. Setting `api.token` requires an `Authorization: Bearer <token>` header on every endpoint except `/health`, which is worth doing even on loopback if other local users/processes on the same host shouldn't see scale data:
+**There's no TLS built in.** `host` defaults to `127.0.0.1` (loopback only) for a reason: don't bind it to `0.0.0.0` or a LAN-facing interface without putting a reverse proxy (with TLS and its own auth) in front of it. Setting `api.token` requires an `Authorization: Bearer <token>` header on every endpoint except `/health`, which is worth doing even on loopback if other local users/processes on the same host shouldn't see scale data:
 
 ```bash
 curl -H "Authorization: Bearer <token>" http://127.0.0.1:8080/latest
@@ -223,14 +223,14 @@ curl -H "Authorization: Bearer <token>" http://127.0.0.1:8080/latest
 
 ### Profiles
 
-For a scale shared by more than one person: `[profiles]` asks "who was this?" after each reading and tags it, so reports and body-metrics calculations (which otherwise assume one person, see the body-composition note above) can be filtered and computed per person. There's no way to identify who's standing on the scale automatically -- no camera, no button, nothing but a weight number -- so this asks a human directly instead of guessing from a weight range. Set `report.include_profile = yes` to show who each reading belongs to in a report that spans every profile at once, rather than filtering to just one via `--profile`/`?profile=`.
+For a scale shared by more than one person: `[profiles]` asks "who was this?" after each reading and tags it, so reports and body-metrics calculations (which otherwise assume one person, see the body-composition note above) can be filtered and computed per person. There's no way to identify who's standing on the scale automatically (no camera, no button, nothing but a weight number), so this asks a human directly instead of guessing from a weight range. Set `report.include_profile = yes` to show who each reading belongs to in a report that spans every profile at once, rather than filtering to just one via `--profile`/`?profile=`.
 
-`--check-config` cross-checks `profiles.names` against the database: if a profile name was removed or renamed but readings tagged with the old name still exist, it prints a warning (not an error -- exit code stays `0`) so that history doesn't just silently stop being explainable.
+`--check-config` cross-checks `profiles.names` against the database: if a profile name was removed or renamed but readings tagged with the old name still exist, it prints a warning (not an error; the exit code stays `0`) so that history doesn't just silently stop being explainable.
 
 Two delivery paths, chosen automatically based on whether `[api]` is enabled:
 
-- **`[api]` enabled** -- an [ntfy](https://ntfy.sh) notification with one HTTP action button per name in `profiles.names`. Tapping a button hits this API's `/assign-profile` endpoint directly, tagging that specific reading. Requires `profiles.ntfy_url` (and `profiles.api_base_url` pointing at wherever the API is actually reachable from your phone/desktop -- `127.0.0.1` only works if ntfy and the API run on the same machine). If the ntfy server is briefly unreachable or returns a 5xx error right when a reading happens, the publish is retried twice (after 1s, then 2s) before giving up and logging a warning -- a 4xx response (bad token, bad request) is never retried.
-- **`[api]` disabled** -- a local [dunstify](https://dunst-project.org) prompt instead, since ntfy's action buttons would have nothing to call back to without the API running. This resolves synchronously and tags the reading directly, no network round-trip. It needs the `dunst` notification daemon and a real desktop/D-Bus session -- it will not reach anywhere from a headless system service with no logged-in session, which is how the daemon runs by default.
+- **`[api]` enabled**: an [ntfy](https://ntfy.sh) notification with one HTTP action button per name in `profiles.names`. Tapping a button hits this API's `/assign-profile` endpoint directly, tagging that specific reading. Requires `profiles.ntfy_url` (and `profiles.api_base_url` pointing at wherever the API is actually reachable from your phone/desktop; `127.0.0.1` only works if ntfy and the API run on the same machine). If the ntfy server is briefly unreachable or returns a 5xx error right when a reading happens, the publish is retried twice (after 1s, then 2s) before giving up and logging a warning. A 4xx response (bad token, bad request) is never retried.
+- **`[api]` disabled**: a local [dunstify](https://dunst-project.org) prompt instead, since ntfy's action buttons would have nothing to call back to without the API running. This resolves synchronously and tags the reading directly, no network round-trip. It needs the `dunst` notification daemon and a real desktop/D-Bus session. It will not reach anywhere from a headless system service with no logged-in session, which is how the daemon runs by default.
 
 ```ini
 [profiles]
@@ -246,7 +246,7 @@ api_base_url = http://127.0.0.1:8080
 curl "http://127.0.0.1:8080/assign-profile?id=42&profile=Alice"
 ```
 
-If `profiles.assign_window_seconds` is set, this fails with `409` for a reading older than that window -- a safety net for delayed ntfy notifications (tapped long after connectivity returns, potentially tagging a now-stale reading someone's forgotten about) rather than a limit on manual corrections. Add `&confirm=1` to tag an old reading on purpose:
+If `profiles.assign_window_seconds` is set, this fails with `409` for a reading older than that window: a safety net for delayed ntfy notifications (tapped long after connectivity returns, potentially tagging a now-stale reading someone's forgotten about) rather than a limit on manual corrections. Add `&confirm=1` to tag an old reading on purpose:
 
 ```bash
 curl "http://127.0.0.1:8080/assign-profile?id=42&profile=Alice&confirm=1"
@@ -254,7 +254,7 @@ curl "http://127.0.0.1:8080/assign-profile?id=42&profile=Alice&confirm=1"
 
 #### Per-profile body composition
 
-Give each profile its own `[profile.<name>]` section -- name/email plus `height_unit`/`height`/`birthdate`/`sex`/`athlete` -- and both the report CLI and the API can compute body composition for the right person:
+Give each profile its own `[profile.<name>]` section (name/email plus `height_unit`/`height`/`birthdate`/`sex`/`athlete`), and both the report CLI and the API can compute body composition for the right person:
 
 ```ini
 [profile.Alice]
@@ -272,9 +272,9 @@ etekcity-scale-report --config /etc/etekcity-scale-daemon/config.ini --profile A
 curl -o alice-report.pdf "http://127.0.0.1:8080/report?profile=Alice"
 ```
 
-`--profile`/`?profile=` also filters which readings are included (only ones tagged with that name), not just which biometrics get used, and is required whenever `report.include_body_metrics = yes` -- there's no shared fallback section. This never falls back to another profile's values when a profile's section is missing or incomplete -- that would mean silently computing Bob's body fat percentage using Alice's height, which is a correctness bug, not a convenience, so it's a clear error instead.
+`--profile`/`?profile=` also filters which readings are included (only ones tagged with that name), not just which biometrics get used, and is required whenever `report.include_body_metrics = yes`, since there's no shared fallback section. This never falls back to another profile's values when a profile's section is missing or incomplete: that would mean silently computing Bob's body fat percentage using Alice's height, which is a correctness bug, not a convenience, so it's a clear error instead.
 
-Impedance-based body composition assumes a complete electrical path through both feet, which doesn't hold for everyone -- an amputee, someone standing on one foot, or anyone else who can't complete that path will get a physiologically meaningless number even though the weight reading itself is fine. Set `skip_body_metrics = yes` on that profile instead of filling in height/birthdate/sex, and reports print a note explaining why body composition was skipped rather than a bogus BMI:
+Impedance-based body composition assumes a complete electrical path through both feet, which doesn't hold for everyone: an amputee, someone standing on one foot, or anyone else who can't complete that path will get a physiologically meaningless number even though the weight reading itself is fine. Set `skip_body_metrics = yes` on that profile instead of filling in height/birthdate/sex, and reports print a note explaining why body composition was skipped rather than a bogus BMI:
 
 ```ini
 [profile.Charlie]
@@ -301,17 +301,17 @@ goal_weight_unit = kg
 goal_weight = 62
 ```
 
-Unlike body composition, there's no correctness risk in a profile simply not having a goal set -- so a missing `goal_weight`, or generating a report with no `--profile`/`?profile=` at all, just prints a note instead of erroring.
+Unlike body composition, there's no correctness risk in a profile simply not having a goal set, so a missing `goal_weight`, or generating a report with no `--profile`/`?profile=` at all, just prints a note instead of erroring.
 
-Why ntfy specifically: unlike most notification services, ntfy's `http` action type is a full HTTP request (URL, method, headers, body) fired directly when the button is tapped -- the notification service itself is the callback mechanism, no separate bot or polling process needed. Pushover only supports a single acknowledge callback tied to emergency-priority alerts, Pushbullet's actionable notifications are about mirroring your own devices rather than third-party callbacks, and Gotify has no equivalent at all. [Apprise](https://github.com/caronc/apprise) (used for [alerting](#alerting)) isn't used here either -- its unified API has no concept of actions since it targets 100+ services and most have nothing like this.
+Why ntfy specifically: unlike most notification services, ntfy's `http` action type is a full HTTP request (URL, method, headers, body) fired directly when the button is tapped, so the notification service itself is the callback mechanism, no separate bot or polling process needed. Pushover only supports a single acknowledge callback tied to emergency-priority alerts, Pushbullet's actionable notifications are about mirroring your own devices rather than third-party callbacks, and Gotify has no equivalent at all. [Apprise](https://github.com/caronc/apprise) (used for [alerting](#alerting)) isn't used here either, since its unified API has no concept of actions and targets 100+ services, most of which have nothing like this.
 
 ### Docker
 
-**⚠️ Unverified.** Docker wasn't available in the environment this was written in, so the image has only been checked for "does `pip install .` succeed with these files" — the container has never actually been built, started, or tested against real BLE hardware. Treat this as a starting point to debug, not a working install path, until someone confirms it end-to-end.
+**⚠️ Unverified.** Docker wasn't available in the environment this was written in, so the image has only been checked for "does `pip install .` succeed with these files." The container has never actually been built, started, or tested against real BLE hardware. Treat this as a starting point to debug, not a working install path, until someone confirms it end-to-end.
 
-BLE access from inside a container needs the host's D-Bus system bus and Bluetooth adapter, which is why `docker-compose.yml` uses `network_mode: host` plus a bind mount of `/var/run/dbus` — bridge networking would isolate the container from both.
+BLE access from inside a container needs the host's D-Bus system bus and Bluetooth adapter, which is why `docker-compose.yml` uses `network_mode: host` plus a bind mount of `/var/run/dbus`; bridge networking would isolate the container from both.
 
-A pre-built image publishes to GHCR from CI on every push to `main`, tagged `latest` and by commit SHA — `docker pull ghcr.io/bonelifer/etekcity-scale-daemon:latest` instead of building locally, if you'd rather not build it yourself. Substitute that image name for `etekcity-scale-daemon` in the commands below to use it instead of `docker build`.
+A pre-built image publishes to GHCR from CI on every push to `main`, tagged `latest` and by commit SHA, so `docker pull ghcr.io/bonelifer/etekcity-scale-daemon:latest` works instead of building locally, if you'd rather not build it yourself. Substitute that image name for `etekcity-scale-daemon` in the commands below to use it instead of `docker build`.
 
 ```bash
 mkdir -p config data
@@ -355,7 +355,7 @@ etekcity-scale-daemon --config /etc/etekcity-scale-daemon/config.ini --check-con
 
 ### Cron-driven polling instead of a long-running service
 
-`--once` records a single measurement and exits, instead of running until stopped — an alternative to the systemd service for setups that prefer periodic polling (e.g. cron) over a persistent process. It waits up to `--once-timeout` seconds (default 60) for a reading and exits non-zero if none arrives in time:
+`--once` records a single measurement and exits, instead of running until stopped: an alternative to the systemd service for setups that prefer periodic polling (e.g. cron) over a persistent process. It waits up to `--once-timeout` seconds (default 60) for a reading and exits non-zero if none arrives in time:
 
 ```bash
 etekcity-scale-daemon --config /etc/etekcity-scale-daemon/config.ini --once --once-timeout 30
@@ -367,7 +367,7 @@ Example crontab entry, polling every 15 minutes:
 */15 * * * * /usr/bin/etekcity-scale-daemon --config /etc/etekcity-scale-daemon/config.ini --once >> /var/log/etekcity-scale-daemon.log 2>&1
 ```
 
-On the very first run, if `[scale] address`/`model` are still empty, `--once` also uses `--once-timeout` as the scale-discovery timeout (instead of a separate 60-second default) — worst case, an undiscovered scale on a cron job can take up to `2 * --once-timeout` before giving up. Once discovered, the address is saved back into the config (as always), so every run after that only waits `--once-timeout` for the measurement itself.
+On the very first run, if `[scale] address`/`model` are still empty, `--once` also uses `--once-timeout` as the scale-discovery timeout (instead of a separate 60-second default). Worst case, an undiscovered scale on a cron job can take up to `2 * --once-timeout` before giving up. Once discovered, the address is saved back into the config (as always), so every run after that only waits `--once-timeout` for the measurement itself.
 
 ## Database schema
 
@@ -406,7 +406,7 @@ etekcity-scale-report --db /var/lib/etekcity-scale-daemon/measurements.db --outp
 
 Add `--address AA:BB:CC:DD:EE:FF` to restrict the report to one scale if the database has readings from more than one.
 
-If the database has readings from more than one scale (e.g. different family members each with their own), add `--multi-scale` instead to get one PDF with a separate heading, its own table/chart, and its own summary line per scale, each starting on a fresh page — rather than one table mixing everyone's readings together:
+If the database has readings from more than one scale (e.g. different family members each with their own), add `--multi-scale` instead to get one PDF with a separate heading, its own table/chart, and its own summary line per scale, each starting on a fresh page, rather than one table mixing everyone's readings together:
 
 ```bash
 etekcity-scale-report --config /etc/etekcity-scale-daemon/config.ini --multi-scale --output all-scales.pdf
@@ -420,23 +420,23 @@ Add `--format csv` for a CSV file instead of a PDF (default output path becomes 
 etekcity-scale-report --config /etc/etekcity-scale-daemon/config.ini --format csv --output report.csv
 ```
 
-CSV export always uses the `full` layout's column set (respecting `include_address`/`include_model`/`include_impedance`/`include_heart_rate`/`include_profile`, `weight_unit`, and `date_format`) — `layout`, `page_size`, `include_summary`, `include_body_metrics`, and profile name/email/biometrics are PDF-only and have no effect on CSV.
+CSV export always uses the `full` layout's column set (respecting `include_address`/`include_model`/`include_impedance`/`include_heart_rate`/`include_profile`, `weight_unit`, and `date_format`). `layout`, `page_size`, `include_summary`, `include_body_metrics`, and profile name/email/biometrics are PDF-only and have no effect on CSV.
 
-Set `report.include_body_metrics = yes` and pass `--profile <name>`/`?profile=<name>` (see [Per-profile body composition](#per-profile-body-composition)) for a "Body Composition" section — BMI, body fat %, muscle mass, bone mass, and the rest of the upstream library's `BodyMetrics` calculations, computed from the single most recent reading that has impedance data. It's a current snapshot, not a per-reading history, and only applies to single-scale PDF reports — it's skipped for `--format csv` (no profile context there) and for `--multi-scale` (which can represent readings from different people, so one shared height/birthdate/sex wouldn't make sense).
+Set `report.include_body_metrics = yes` and pass `--profile <name>`/`?profile=<name>` (see [Per-profile body composition](#per-profile-body-composition)) for a "Body Composition" section: BMI, body fat %, muscle mass, bone mass, and the rest of the upstream library's `BodyMetrics` calculations, computed from the single most recent reading that has impedance data. It's a current snapshot, not a per-reading history, and only applies to single-scale PDF reports. It's skipped for `--format csv` (no profile context there) and for `--multi-scale` (which can represent readings from different people, so one shared height/birthdate/sex wouldn't make sense).
 
-The layout, which columns appear, the weight unit, and the date/time format are all controlled by the `[report]` section of the config file (see the table above) — `--config` reads them, `--db` always uses the defaults (`full` layout, all columns, kilograms, `world` date format).
+The layout, which columns appear, the weight unit, and the date/time format are all controlled by the `[report]` section of the config file (see the table above). `--config` reads them; `--db` always uses the defaults (`full` layout, all columns, kilograms, `world` date format).
 
 The `simple` layout drops every column except Date/Time and Weight and lays readings out in several side-by-side column pairs (filling one pair top-to-bottom before starting the next) instead of a single narrow two-column table.
 
-The `chart` layout replaces the table with a line chart of weight over time (x-axis labels thin themselves out automatically when there are many readings). It needs at least two readings with a weight value; with fewer, the page prints a "not enough data" note instead. `include_address`/`include_model`/`include_impedance`/`include_heart_rate` have no effect on this layout — only `weight_unit` and `date_format` apply.
+The `chart` layout replaces the table with a line chart of weight over time (x-axis labels thin themselves out automatically when there are many readings). It needs at least two readings with a weight value; with fewer, the page prints a "not enough data" note instead. `include_address`/`include_model`/`include_impedance`/`include_heart_rate` have no effect on this layout; only `weight_unit` and `date_format` apply.
 
 See [samples/](samples/) for a rendered PDF of every layout/unit/date-format combination.
 
-Set a profile's `name` and/or `email` (only usable via `--profile`/`?profile=`, and only read from `--config`, not `--db`) to print that identifying info below the title — handy when handing a report to a doctor. Leave either blank to omit it; leave both blank and no patient line is printed at all.
+Set a profile's `name` and/or `email` (only usable via `--profile`/`?profile=`, and only read from `--config`, not `--db`) to print that identifying info below the title, handy when handing a report to a doctor. Leave either blank to omit it; leave both blank and no patient line is printed at all.
 
 ## Pruning old data
 
-`etekcity-scale-prune` deletes measurements older than a given number of days. It's manual only — nothing in the daemon deletes data automatically. It's a **dry run by default**: it reports how many rows match without touching anything, until you pass `--yes`.
+`etekcity-scale-prune` deletes measurements older than a given number of days. It's manual only: nothing in the daemon deletes data automatically. It's a **dry run by default**: it reports how many rows match without touching anything, until you pass `--yes`.
 
 ```bash
 # See how many readings older than 365 days would be deleted
@@ -471,9 +471,9 @@ Each measurement publishes to `<topic_prefix>/<scale address>/state`, e.g. `etek
 {"recorded_at": "2026-08-06T01:23:45.678901+00:00", "address": "AA:BB:CC:DD:EE:FF", "model": "ESF-551", "weight_kg": 75.0, "impedance_ohms": 500.0, "impedance_500khz_ohms": null, "heart_rate_bpm": null, "display_unit": "KG"}
 ```
 
-A broker that's down or unreachable is logged as a warning and otherwise ignored — BLE recording to the local database is the daemon's primary job and is never blocked by an MQTT outage. Check `--check-config` to confirm the daemon parsed your `[mqtt]` settings as expected before relying on it.
+A broker that's down or unreachable is logged as a warning and otherwise ignored. BLE recording to the local database is the daemon's primary job, and it's never blocked by an MQTT outage. Check `--check-config` to confirm the daemon parsed your `[mqtt]` settings as expected before relying on it.
 
-There's no Home Assistant MQTT discovery support yet (auto-creating entities) — this publishes raw JSON only. Subscribe and parse it yourself, or wire up discovery messages separately if you need that.
+There's no Home Assistant MQTT discovery support yet (auto-creating entities): this publishes raw JSON only. Subscribe and parse it yourself, or wire up discovery messages separately if you need that.
 
 ## Troubleshooting
 
@@ -487,7 +487,7 @@ bluetoothctl scan on
 
 ## Acknowledgments
 
-- Scale hardware designed and sold by [Etekcity](https://www.etekcity.com) / [VeSync Co., Ltd.](https://www.vesync.com) — see the Disclaimer above.
+- Scale hardware designed and sold by [Etekcity](https://www.etekcity.com) / [VeSync Co., Ltd.](https://www.vesync.com) (see the Disclaimer above).
 - Built on [`etekcity_esf551_ble`](https://github.com/ronnnnnnnnnnnnn/etekcity_esf551_ble) by maintainer [@ronnnnnnnnnnnnn](https://github.com/ronnnnnnnnnnnnn), which does all the BLE protocol and reverse-engineering work.
 - Code review, bug fixes, and documentation assisted by [Claude](https://www.anthropic.com/claude).
 
