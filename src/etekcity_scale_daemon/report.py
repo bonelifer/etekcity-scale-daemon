@@ -574,7 +574,8 @@ def _build_body_metrics_elements(
     Uses the most recent row with both a weight and impedance value (older
     rows are ignored -- this is a current snapshot, not a per-reading
     history). Requires ``patient_config.height_m``/``birthdate``/``sex`` to
-    already be validated as set by the caller.
+    already be validated as set by the caller, unless
+    ``patient_config.skip_body_metrics`` is set.
 
     Args:
         rows: Measurement rows to include, oldest first.
@@ -585,8 +586,20 @@ def _build_body_metrics_elements(
 
     Returns:
         Flowables to append: either a heading + metrics table, or a single
-        note paragraph if no row has both weight and impedance data.
+        note paragraph if no row has both weight and impedance data or the
+        profile opted out via ``skip_body_metrics``.
     """
+    if patient_config.skip_body_metrics:
+        return [
+            Paragraph(
+                "Body composition: skipped for this profile "
+                "(skip_body_metrics = yes) -- impedance-based metrics assume "
+                "a two-foot electrical path, which doesn't hold for everyone.",
+                styles["Normal"],
+            ),
+            Spacer(1, 0.15 * inch),
+        ]
+
     latest = next(
         (
             row
@@ -890,21 +903,22 @@ def main(argv: list[str] | None = None) -> int:
                 "[profile.<name>] section"
             )
             return 1
-        missing = [
-            name
-            for name, value in (
-                ("height", effective_patient_config.height_m),
-                ("birthdate", effective_patient_config.birthdate),
-                ("sex", effective_patient_config.sex),
-            )
-            if not value
-        ]
-        if missing:
-            print(
-                "Error: report.include_body_metrics is enabled but "
-                f"[profile.{args.profile}] {', '.join(missing)} must be set"
-            )
-            return 1
+        if not effective_patient_config.skip_body_metrics:
+            missing = [
+                name
+                for name, value in (
+                    ("height", effective_patient_config.height_m),
+                    ("birthdate", effective_patient_config.birthdate),
+                    ("sex", effective_patient_config.sex),
+                )
+                if not value
+            ]
+            if missing:
+                print(
+                    "Error: report.include_body_metrics is enabled but "
+                    f"[profile.{args.profile}] {', '.join(missing)} must be set"
+                )
+                return 1
 
     start, end = _resolve_range(args.period, args.from_date, args.to_date)
     output = args.output or f"measurements-report.{args.format}"

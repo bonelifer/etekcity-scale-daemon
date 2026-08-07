@@ -104,6 +104,7 @@ Leave `[scale] address` and `model` empty to auto-discover a scale on first run 
 | `profile.<name>` | `name` / `email` | Optional, printed below the title in PDF reports when this profile is selected. Leave blank to omit; `name` defaults to the profile's own name (e.g. `Alice`) if left blank. |
 | `profile.<name>` | `height_unit` | Unit that `height` below is written in: `m`, `cm`, or `in`. Defaults to `m`. |
 | `profile.<name>` | `height` / `birthdate` / `sex` / `athlete` | Required for this person's body composition if `report.include_body_metrics = yes`. One section per name in `profiles.names`. Never falls back to another profile's values. |
+| `profile.<name>` | `skip_body_metrics` | `yes` or `no`. Skip body composition for this profile instead of requiring `height`/`birthdate`/`sex` -- for when impedance readings aren't physiologically meaningful for this person. Defaults to `no`. |
 
 #### systemd service
 
@@ -259,6 +260,13 @@ curl -o alice-report.pdf "http://127.0.0.1:8080/report?profile=Alice"
 ```
 
 `--profile`/`?profile=` also filters which readings are included (only ones tagged with that name), not just which biometrics get used, and is required whenever `report.include_body_metrics = yes` -- there's no shared fallback section. This never falls back to another profile's values when a profile's section is missing or incomplete -- that would mean silently computing Bob's body fat percentage using Alice's height, which is a correctness bug, not a convenience, so it's a clear error instead.
+
+Impedance-based body composition assumes a complete electrical path through both feet, which doesn't hold for everyone -- an amputee, someone standing on one foot, or anyone else who can't complete that path will get a physiologically meaningless number even though the weight reading itself is fine. Set `skip_body_metrics = yes` on that profile instead of filling in height/birthdate/sex, and reports print a note explaining why body composition was skipped rather than a bogus BMI:
+
+```ini
+[profile.Charlie]
+skip_body_metrics = yes
+```
 
 Why ntfy specifically: unlike most notification services, ntfy's `http` action type is a full HTTP request (URL, method, headers, body) fired directly when the button is tapped -- the notification service itself is the callback mechanism, no separate bot or polling process needed. Pushover only supports a single acknowledge callback tied to emergency-priority alerts, Pushbullet's actionable notifications are about mirroring your own devices rather than third-party callbacks, and Gotify has no equivalent at all. [Apprise](https://github.com/caronc/apprise) (used for [alerting](#alerting)) isn't used here either -- its unified API has no concept of actions since it targets 100+ services and most have nothing like this.
 

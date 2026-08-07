@@ -208,25 +208,26 @@ async def handle_report(request: web.Request) -> web.Response:
                 },
                 status=400,
             )
-        missing = [
-            name
-            for name, value in (
-                ("height", patient_config.height_m),
-                ("birthdate", patient_config.birthdate),
-                ("sex", patient_config.sex),
-            )
-            if not value
-        ]
-        if missing:
-            return web.json_response(
-                {
-                    "error": (
-                        f"report.include_body_metrics is enabled but "
-                        f"[profile.{profile}] {', '.join(missing)} must be set"
-                    )
-                },
-                status=400,
-            )
+        if not patient_config.skip_body_metrics:
+            missing = [
+                name
+                for name, value in (
+                    ("height", patient_config.height_m),
+                    ("birthdate", patient_config.birthdate),
+                    ("sex", patient_config.sex),
+                )
+                if not value
+            ]
+            if missing:
+                return web.json_response(
+                    {
+                        "error": (
+                            f"report.include_body_metrics is enabled but "
+                            f"[profile.{profile}] {', '.join(missing)} must be set"
+                        )
+                    },
+                    status=400,
+                )
 
     rows = fetch_rows(request.app["db_path"], request.query.get("address"), start, end, profile)
     if not rows:

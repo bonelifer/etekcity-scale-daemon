@@ -504,7 +504,9 @@ def _check_config(config_path: str) -> int:
             except ConfigError as exc:
                 errors.append(str(exc))
                 continue
-            if profile.height_m and profile.birthdate and profile.sex:
+            if profile.skip_body_metrics or (
+                profile.height_m and profile.birthdate and profile.sex
+            ):
                 biometrics_complete += 1
 
     if errors:
