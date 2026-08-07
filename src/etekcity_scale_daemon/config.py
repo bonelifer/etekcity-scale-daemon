@@ -36,6 +36,7 @@ class ReportConfig:
     include_heart_rate: bool
     include_summary: bool
     include_body_metrics: bool
+    include_goal_progress: bool
     weight_unit: str  # "kg", "lb", or "st"
     date_format: str  # "us" or "world"
     layout: str  # "full" or "simple"
@@ -49,6 +50,7 @@ DEFAULT_REPORT_CONFIG = ReportConfig(
     include_heart_rate=False,
     include_summary=False,
     include_body_metrics=False,
+    include_goal_progress=False,
     weight_unit="kg",
     date_format="world",
     layout="full",
@@ -56,6 +58,11 @@ DEFAULT_REPORT_CONFIG = ReportConfig(
 )
 
 _WEIGHT_UNITS = ("kg", "lb", "st")
+_WEIGHT_UNIT_TO_KG = {
+    "kg": 1.0,
+    "lb": 1.0 / 2.2046226218487757,
+    "st": 1.0 / 0.15747304441776975,
+}
 _DATE_FORMATS = ("us", "world")
 _PAGE_SIZES = ("letter", "a4")
 _LAYOUTS = ("full", "simple", "chart")
@@ -77,6 +84,7 @@ class PatientConfig:
     athlete: bool
     skip_body_metrics: bool  # yes: never require/compute impedance-based metrics
     weight_unit: str  # "" (unset, use report.weight_unit), "kg", "lb", or "st"
+    goal_weight_kg: float | None  # None means unset (always kg internally; see goal_weight_unit)
 
 
 DEFAULT_PATIENT_CONFIG = PatientConfig(
@@ -88,6 +96,7 @@ DEFAULT_PATIENT_CONFIG = PatientConfig(
     athlete=False,
     skip_body_metrics=False,
     weight_unit="",
+    goal_weight_kg=None,
 )
 
 _SEXES = ("male", "female")
@@ -322,6 +331,9 @@ def load_report_config(config_path: str) -> ReportConfig:
         include_body_metrics=_parse_bool(
             report.get("include_body_metrics", "no"), "report.include_body_metrics"
         ),
+        include_goal_progress=_parse_bool(
+            report.get("include_goal_progress", "no"), "report.include_goal_progress"
+        ),
         weight_unit=weight_unit,
         date_format=date_format,
         layout=layout,
@@ -367,6 +379,7 @@ def load_profile_biometrics(config_path: str, profile: str) -> PatientConfig:
             athlete=False,
             skip_body_metrics=False,
             weight_unit="",
+            goal_weight_kg=None,
         )
 
     section = parser[section_name]
@@ -411,6 +424,24 @@ def load_profile_biometrics(config_path: str, profile: str) -> PatientConfig:
             f"{section_name}.weight_unit must be one of {_WEIGHT_UNITS}, got {weight_unit!r}"
         )
 
+    goal_weight_unit = section.get("goal_weight_unit", "kg").strip().lower()
+    if goal_weight_unit not in _WEIGHT_UNITS:
+        raise ConfigError(
+            f"{section_name}.goal_weight_unit must be one of {_WEIGHT_UNITS}, "
+            f"got {goal_weight_unit!r}"
+        )
+
+    goal_weight_str = section.get("goal_weight", "").strip()
+    goal_weight_kg = None
+    if goal_weight_str:
+        try:
+            goal_weight_value = float(goal_weight_str)
+        except ValueError as exc:
+            raise ConfigError(f"{section_name}.goal_weight must be a number") from exc
+        if goal_weight_value <= 0:
+            raise ConfigError(f"{section_name}.goal_weight must be a positive number")
+        goal_weight_kg = goal_weight_value * _WEIGHT_UNIT_TO_KG[goal_weight_unit]
+
     return PatientConfig(
         name=section.get("name", "").strip() or profile,
         email=section.get("email", "").strip(),
@@ -420,6 +451,7 @@ def load_profile_biometrics(config_path: str, profile: str) -> PatientConfig:
         athlete=athlete,
         skip_body_metrics=skip_body_metrics,
         weight_unit=weight_unit,
+        goal_weight_kg=goal_weight_kg,
     )
 
 

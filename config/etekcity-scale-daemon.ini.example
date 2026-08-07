@@ -65,6 +65,14 @@ include_summary = no
 # metrics need one single profile to apply).
 include_body_metrics = no
 
+# Print a "Goal Progress" section (current weight, goal weight, remaining,
+# and a rough projected days-to-goal from the rate of change across the
+# report's range) for the selected --profile <name> / ?profile=<name>.
+# Unlike include_body_metrics, a profile without goal_weight set (or no
+# --profile given at all) just prints a note instead of erroring, since
+# there's no correctness risk in simply not showing a goal. PDF only.
+include_goal_progress = no
+
 [mqtt]
 # Publish each measurement to an MQTT broker as JSON. Defaults to no. A
 # broker outage is logged and non-fatal -- it never blocks local recording.
@@ -169,6 +177,10 @@ assign_window_seconds = 0
 # profile's reports only -- leave blank to just use report.weight_unit.
 # Handy when people sharing a scale think in different units.
 #
+# goal_weight_unit (kg, lb, or st; defaults to kg) is the unit that
+# goal_weight below is written in, for report.include_goal_progress.
+# Leave goal_weight blank to just not show goal progress for this profile.
+#
 # [profile.Alice]
 # name = Alice Smith
 # email = alice@example.com
@@ -177,6 +189,8 @@ assign_window_seconds = 0
 # birthdate = 1990-04-12
 # sex = female
 # athlete = no
+# goal_weight_unit = kg
+# goal_weight = 62
 #
 # [profile.Bob]
 # name = Bob Jones
@@ -187,6 +201,8 @@ assign_window_seconds = 0
 # sex = male
 # athlete = no
 # weight_unit = lb
+# goal_weight_unit = lb
+# goal_weight = 180
 #
 # [profile.Charlie]
 # name = Charlie Diaz

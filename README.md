@@ -78,6 +78,7 @@ Leave `[scale] address` and `model` empty to auto-discover a scale on first run 
 | `report` | `page_size` | PDF page size: `letter` or `a4`. |
 | `report` | `include_summary` | Print a min/max/average/net-change summary line for Weight below the title: `yes` or `no`. Defaults to `no`. |
 | `report` | `include_body_metrics` | Print a BMI/body-fat/etc. snapshot for the latest impedance reading: `yes` or `no`. Requires `--profile <name>`/`?profile=<name>` (see `profile.<name>` below). PDF only. Defaults to `no`. |
+| `report` | `include_goal_progress` | Print a current/goal/remaining weight summary with a projected days-to-goal estimate, for the selected `--profile`/`?profile=`: `yes` or `no`. PDF only. Defaults to `no`. |
 | `mqtt` | `enabled` | Publish each measurement to MQTT as JSON: `yes` or `no`. Defaults to `no`. |
 | `mqtt` | `host` | Broker hostname. Required if `enabled = yes`. |
 | `mqtt` | `port` | Broker port. Defaults to `1883`. |
@@ -107,6 +108,7 @@ Leave `[scale] address` and `model` empty to auto-discover a scale on first run 
 | `profile.<name>` | `height` / `birthdate` / `sex` / `athlete` | Required for this person's body composition if `report.include_body_metrics = yes`. One section per name in `profiles.names`. Never falls back to another profile's values. |
 | `profile.<name>` | `skip_body_metrics` | `yes` or `no`. Skip body composition for this profile instead of requiring `height`/`birthdate`/`sex` -- for when impedance readings aren't physiologically meaningful for this person. Defaults to `no`. |
 | `profile.<name>` | `weight_unit` | `kg`, `lb`, or `st`. Overrides `report.weight_unit` for this profile's reports only. Leave blank to just use `report.weight_unit`. |
+| `profile.<name>` | `goal_weight_unit` / `goal_weight` | Unit (`kg`, `lb`, or `st`, defaults to `kg`) and value for `report.include_goal_progress`. Leave `goal_weight` blank to just not show goal progress for this profile -- no error, just a note. |
 
 #### systemd service
 
@@ -282,6 +284,21 @@ A profile's `weight_unit` also overrides `report.weight_unit` for its own report
 [profile.Bob]
 weight_unit = lb
 ```
+
+#### Goal progress
+
+Set `report.include_goal_progress = yes` plus a `goal_weight` on a profile for a "Goal Progress" section: current weight, goal weight, how much remains, and a rough projected days-to-goal estimate from the rate of change between the first and last weighed reading in the report's range.
+
+```ini
+[report]
+include_goal_progress = yes
+
+[profile.Alice]
+goal_weight_unit = kg
+goal_weight = 62
+```
+
+Unlike body composition, there's no correctness risk in a profile simply not having a goal set -- so a missing `goal_weight`, or generating a report with no `--profile`/`?profile=` at all, just prints a note instead of erroring.
 
 Why ntfy specifically: unlike most notification services, ntfy's `http` action type is a full HTTP request (URL, method, headers, body) fired directly when the button is tapped -- the notification service itself is the callback mechanism, no separate bot or polling process needed. Pushover only supports a single acknowledge callback tied to emergency-priority alerts, Pushbullet's actionable notifications are about mirroring your own devices rather than third-party callbacks, and Gotify has no equivalent at all. [Apprise](https://github.com/caronc/apprise) (used for [alerting](#alerting)) isn't used here either -- its unified API has no concept of actions since it targets 100+ services and most have nothing like this.
 
