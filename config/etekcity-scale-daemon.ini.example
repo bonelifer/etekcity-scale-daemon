@@ -165,6 +165,10 @@ assign_window_seconds = 0
 # (e.g. an amputee or anyone who can't complete the two-foot electrical
 # path the scale relies on). Weight itself is unaffected either way.
 #
+# weight_unit (kg, lb, or st) overrides report.weight_unit for this
+# profile's reports only -- leave blank to just use report.weight_unit.
+# Handy when people sharing a scale think in different units.
+#
 # [profile.Alice]
 # name = Alice Smith
 # email = alice@example.com
@@ -182,6 +186,7 @@ assign_window_seconds = 0
 # birthdate = 1988-11-02
 # sex = male
 # athlete = no
+# weight_unit = lb
 #
 # [profile.Charlie]
 # name = Charlie Diaz
