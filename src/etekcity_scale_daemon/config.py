@@ -75,10 +75,17 @@ class PatientConfig:
     birthdate: date | None
     sex: str  # "" (unset), "male", or "female"
     athlete: bool
+    skip_body_metrics: bool  # yes: never require/compute impedance-based metrics
 
 
 DEFAULT_PATIENT_CONFIG = PatientConfig(
-    name="", email="", height_m=0.0, birthdate=None, sex="", athlete=False
+    name="",
+    email="",
+    height_m=0.0,
+    birthdate=None,
+    sex="",
+    athlete=False,
+    skip_body_metrics=False,
 )
 
 _SEXES = ("male", "female")
@@ -348,7 +355,13 @@ def load_profile_biometrics(config_path: str, profile: str) -> PatientConfig:
     section_name = f"profile.{profile}"
     if not parser.has_section(section_name):
         return PatientConfig(
-            name=profile, email="", height_m=0.0, birthdate=None, sex="", athlete=False
+            name=profile,
+            email="",
+            height_m=0.0,
+            birthdate=None,
+            sex="",
+            athlete=False,
+            skip_body_metrics=False,
         )
 
     section = parser[section_name]
@@ -383,6 +396,9 @@ def load_profile_biometrics(config_path: str, profile: str) -> PatientConfig:
         raise ConfigError(f"{section_name}.sex must be one of {_SEXES}, got {sex!r}")
 
     athlete = _parse_bool(section.get("athlete", "no"), f"{section_name}.athlete")
+    skip_body_metrics = _parse_bool(
+        section.get("skip_body_metrics", "no"), f"{section_name}.skip_body_metrics"
+    )
 
     return PatientConfig(
         name=section.get("name", "").strip() or profile,
@@ -391,6 +407,7 @@ def load_profile_biometrics(config_path: str, profile: str) -> PatientConfig:
         birthdate=birthdate,
         sex=sex,
         athlete=athlete,
+        skip_body_metrics=skip_body_metrics,
     )
 
 

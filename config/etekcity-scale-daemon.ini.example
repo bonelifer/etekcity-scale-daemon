@@ -153,6 +153,12 @@ dunstify_timeout_seconds = 30
 # height_unit is the unit that the height value below is written in: m
 # (meters), cm (centimeters), or in (inches). Defaults to m.
 #
+# skip_body_metrics = yes skips body composition entirely for this profile
+# instead of requiring height/birthdate/sex -- useful when bioelectrical
+# impedance readings aren't physiologically meaningful for this person
+# (e.g. an amputee or anyone who can't complete the two-foot electrical
+# path the scale relies on). Weight itself is unaffected either way.
+#
 # [profile.Alice]
 # name = Alice Smith
 # email = alice@example.com
@@ -170,3 +176,7 @@ dunstify_timeout_seconds = 30
 # birthdate = 1988-11-02
 # sex = male
 # athlete = no
+#
+# [profile.Charlie]
+# name = Charlie Diaz
+# skip_body_metrics = yes
