@@ -34,6 +34,7 @@ class ReportConfig:
     include_model: bool
     include_impedance: bool
     include_heart_rate: bool
+    include_profile: bool
     include_summary: bool
     include_body_metrics: bool
     include_goal_progress: bool
@@ -48,6 +49,7 @@ DEFAULT_REPORT_CONFIG = ReportConfig(
     include_model=True,
     include_impedance=True,
     include_heart_rate=False,
+    include_profile=False,
     include_summary=False,
     include_body_metrics=False,
     include_goal_progress=False,
@@ -324,6 +326,9 @@ def load_report_config(config_path: str) -> ReportConfig:
         ),
         include_heart_rate=_parse_bool(
             report.get("include_heart_rate", "no"), "report.include_heart_rate"
+        ),
+        include_profile=_parse_bool(
+            report.get("include_profile", "no"), "report.include_profile"
         ),
         include_summary=_parse_bool(
             report.get("include_summary", "no"), "report.include_summary"

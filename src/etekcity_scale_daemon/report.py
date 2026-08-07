@@ -36,6 +36,7 @@ from .config import (
     load_profile_biometrics,
     load_report_config,
 )
+from .storage import ensure_schema
 
 _PERIOD_DAYS = {
     "7d": 7,
@@ -113,6 +114,7 @@ class ReportRow:
     weight_kg: float | None
     impedance_ohms: float | None
     heart_rate_bpm: float | None
+    profile: str | None
 
 
 def _resolve_range(
@@ -170,7 +172,7 @@ def fetch_rows(
     """
     query = (
         "SELECT recorded_at, address, model, weight_kg, impedance_ohms, "
-        "heart_rate_bpm FROM measurements"
+        "heart_rate_bpm, profile FROM measurements"
     )
     clauses: list[str] = []
     params: list[str] = []
@@ -203,6 +205,7 @@ def fetch_rows(
                 weight_kg=row[3],
                 impedance_ohms=row[4],
                 heart_rate_bpm=row[5],
+                profile=row[6],
             )
             for row in cursor.fetchall()
         ]
@@ -304,6 +307,8 @@ def _full_columns(rows: list[ReportRow], report_config: ReportConfig) -> _FullCo
         header.append("Address")
     if report_config.include_model:
         header.append("Model")
+    if report_config.include_profile:
+        header.append("Profile")
     header.append(weight_header)
     if report_config.include_impedance:
         header.append("Impedance (Ω)")
@@ -317,6 +322,8 @@ def _full_columns(rows: list[ReportRow], report_config: ReportConfig) -> _FullCo
             line.append(row.address)
         if report_config.include_model:
             line.append(row.model)
+        if report_config.include_profile:
+            line.append(row.profile)
         line.append(row.weight_kg * weight_factor if row.weight_kg is not None else None)
         if report_config.include_impedance:
             line.append(row.impedance_ohms)
@@ -345,6 +352,7 @@ def _build_full_table(rows: list[ReportRow], report_config: ReportConfig) -> Tab
     heart_rate_idx = (
         header.index("Heart Rate (bpm)") if report_config.include_heart_rate else None
     )
+    profile_idx = header.index("Profile") if report_config.include_profile else None
 
     data = [header]
     for line in columns.rows:
@@ -360,6 +368,8 @@ def _build_full_table(rows: list[ReportRow], report_config: ReportConfig) -> Tab
             formatted[heart_rate_idx] = (
                 f"{line[heart_rate_idx]:.0f}" if line[heart_rate_idx] is not None else "-"
             )
+        if profile_idx is not None:
+            formatted[profile_idx] = line[profile_idx] or "-"
         data.append(formatted)
 
     align_cols = [weight_idx]
@@ -397,6 +407,7 @@ def build_csv(
     heart_rate_idx = (
         header.index("Heart Rate (bpm)") if report_config.include_heart_rate else None
     )
+    profile_idx = header.index("Profile") if report_config.include_profile else None
 
     with open(output_path, "w", newline="", encoding="utf-8") as csv_file:
         writer = csv.writer(csv_file)
@@ -414,6 +425,8 @@ def build_csv(
                 formatted[heart_rate_idx] = (
                     f"{line[heart_rate_idx]:.0f}" if line[heart_rate_idx] is not None else ""
                 )
+            if profile_idx is not None:
+                formatted[profile_idx] = line[profile_idx] or ""
             writer.writerow(formatted)
 
 
@@ -963,6 +976,11 @@ def main(argv: list[str] | None = None) -> int:
         except ConfigError as exc:
             print(f"Error: {exc}")
             return 1
+
+    # Migrates in the profile column for databases predating the profiles
+    # feature -- fetch_rows() always selects it now, so an unmigrated
+    # database would otherwise fail with "no such column: profile".
+    ensure_schema(db_path)
 
     # There's no shared [patient] section anymore -- biometrics (and the
     # name/email printed on the report) only ever come from --profile's own

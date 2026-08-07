@@ -73,6 +73,7 @@ Leave `[scale] address` and `model` empty to auto-discover a scale on first run 
 | `report` | `include_model` | Show the Model column in the `full` layout: `yes` or `no`. |
 | `report` | `include_impedance` | Show the Impedance column in the `full` layout: `yes` or `no`. |
 | `report` | `include_heart_rate` | Show the Heart Rate column in the `full` layout: `yes` or `no`. Only EFS-A591S reports heart rate; defaults to `no`. |
+| `report` | `include_profile` | Show the Profile column in the `full` layout: `yes` or `no`. Mainly useful when a report spans every profile at once. Defaults to `no`. |
 | `report` | `weight_unit` | Unit to render the Weight column in: `kg`, `lb`, or `st`. |
 | `report` | `date_format` | `us` (MM/DD/YYYY, 12-hour) or `world` (DD/MM/YYYY, 24-hour). |
 | `report` | `page_size` | PDF page size: `letter` or `a4`. |
@@ -222,7 +223,7 @@ curl -H "Authorization: Bearer <token>" http://127.0.0.1:8080/latest
 
 ### Profiles
 
-For a scale shared by more than one person: `[profiles]` asks "who was this?" after each reading and tags it, so reports and body-metrics calculations (which otherwise assume one person, see the body-composition note above) can be filtered and computed per person. There's no way to identify who's standing on the scale automatically -- no camera, no button, nothing but a weight number -- so this asks a human directly instead of guessing from a weight range.
+For a scale shared by more than one person: `[profiles]` asks "who was this?" after each reading and tags it, so reports and body-metrics calculations (which otherwise assume one person, see the body-composition note above) can be filtered and computed per person. There's no way to identify who's standing on the scale automatically -- no camera, no button, nothing but a weight number -- so this asks a human directly instead of guessing from a weight range. Set `report.include_profile = yes` to show who each reading belongs to in a report that spans every profile at once, rather than filtering to just one via `--profile`/`?profile=`.
 
 Two delivery paths, chosen automatically based on whether `[api]` is enabled:
 
@@ -417,7 +418,7 @@ Add `--format csv` for a CSV file instead of a PDF (default output path becomes 
 etekcity-scale-report --config /etc/etekcity-scale-daemon/config.ini --format csv --output report.csv
 ```
 
-CSV export always uses the `full` layout's column set (respecting `include_address`/`include_model`/`include_impedance`/`include_heart_rate`, `weight_unit`, and `date_format`) — `layout`, `page_size`, `include_summary`, `include_body_metrics`, and profile name/email/biometrics are PDF-only and have no effect on CSV.
+CSV export always uses the `full` layout's column set (respecting `include_address`/`include_model`/`include_impedance`/`include_heart_rate`/`include_profile`, `weight_unit`, and `date_format`) — `layout`, `page_size`, `include_summary`, `include_body_metrics`, and profile name/email/biometrics are PDF-only and have no effect on CSV.
 
 Set `report.include_body_metrics = yes` and pass `--profile <name>`/`?profile=<name>` (see [Per-profile body composition](#per-profile-body-composition)) for a "Body Composition" section — BMI, body fat %, muscle mass, bone mass, and the rest of the upstream library's `BodyMetrics` calculations, computed from the single most recent reading that has impedance data. It's a current snapshot, not a per-reading history, and only applies to single-scale PDF reports — it's skipped for `--format csv` (no profile context there) and for `--multi-scale` (which can represent readings from different people, so one shared height/birthdate/sex wouldn't make sense).
 
