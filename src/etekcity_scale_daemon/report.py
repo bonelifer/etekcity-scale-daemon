@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from xml.sax.saxutils import escape
 
@@ -940,10 +940,19 @@ def main(argv: list[str] | None = None) -> int:
         print("No measurements found for the given range/filters.")
         return 1
 
+    # A profile's own weight_unit (if set) overrides report.weight_unit for
+    # its reports, so e.g. one household member can see lb while another
+    # sees kg regardless of the shared config default.
+    effective_report_config = report_config
+    if effective_patient_config.weight_unit:
+        effective_report_config = replace(
+            report_config, weight_unit=effective_patient_config.weight_unit
+        )
+
     if args.format == "csv":
-        build_csv(rows, output, report_config)
+        build_csv(rows, output, effective_report_config)
     else:
-        build_pdf(rows, output, report_config, effective_patient_config)
+        build_pdf(rows, output, effective_report_config, effective_patient_config)
     print(f"Wrote {len(rows)} reading(s) to {output}")
     return 0
 

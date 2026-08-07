@@ -76,6 +76,7 @@ class PatientConfig:
     sex: str  # "" (unset), "male", or "female"
     athlete: bool
     skip_body_metrics: bool  # yes: never require/compute impedance-based metrics
+    weight_unit: str  # "" (unset, use report.weight_unit), "kg", "lb", or "st"
 
 
 DEFAULT_PATIENT_CONFIG = PatientConfig(
@@ -86,6 +87,7 @@ DEFAULT_PATIENT_CONFIG = PatientConfig(
     sex="",
     athlete=False,
     skip_body_metrics=False,
+    weight_unit="",
 )
 
 _SEXES = ("male", "female")
@@ -364,6 +366,7 @@ def load_profile_biometrics(config_path: str, profile: str) -> PatientConfig:
             sex="",
             athlete=False,
             skip_body_metrics=False,
+            weight_unit="",
         )
 
     section = parser[section_name]
@@ -402,6 +405,12 @@ def load_profile_biometrics(config_path: str, profile: str) -> PatientConfig:
         section.get("skip_body_metrics", "no"), f"{section_name}.skip_body_metrics"
     )
 
+    weight_unit = section.get("weight_unit", "").strip().lower()
+    if weight_unit and weight_unit not in _WEIGHT_UNITS:
+        raise ConfigError(
+            f"{section_name}.weight_unit must be one of {_WEIGHT_UNITS}, got {weight_unit!r}"
+        )
+
     return PatientConfig(
         name=section.get("name", "").strip() or profile,
         email=section.get("email", "").strip(),
@@ -410,6 +419,7 @@ def load_profile_biometrics(config_path: str, profile: str) -> PatientConfig:
         sex=sex,
         athlete=athlete,
         skip_body_metrics=skip_body_metrics,
+        weight_unit=weight_unit,
     )
 
 

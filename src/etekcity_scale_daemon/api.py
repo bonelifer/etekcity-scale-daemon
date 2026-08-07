@@ -12,6 +12,7 @@ import argparse
 import os
 import sqlite3
 import tempfile
+from dataclasses import replace
 from datetime import datetime, timezone
 
 from aiohttp import web
@@ -267,14 +268,21 @@ async def handle_report(request: web.Request) -> web.Response:
             {"error": "no measurements found for the given range/filters"}, status=404
         )
 
+    # A profile's own weight_unit (if set) overrides report.weight_unit for
+    # its reports, so e.g. one household member can see lb while another
+    # sees kg regardless of the shared config default.
+    effective_report_config = report_config
+    if patient_config.weight_unit:
+        effective_report_config = replace(report_config, weight_unit=patient_config.weight_unit)
+
     fd, temp_path = tempfile.mkstemp(suffix=f".{fmt}")
     os.close(fd)
     try:
         if fmt == "csv":
-            build_csv(rows, temp_path, report_config)
+            build_csv(rows, temp_path, effective_report_config)
             content_type = "text/csv"
         else:
-            build_pdf(rows, temp_path, report_config, patient_config)
+            build_pdf(rows, temp_path, effective_report_config, patient_config)
             content_type = "application/pdf"
         with open(temp_path, "rb") as report_file:
             body = report_file.read()

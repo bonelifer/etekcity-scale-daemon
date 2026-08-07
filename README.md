@@ -106,6 +106,7 @@ Leave `[scale] address` and `model` empty to auto-discover a scale on first run 
 | `profile.<name>` | `height_unit` | Unit that `height` below is written in: `m`, `cm`, or `in`. Defaults to `m`. |
 | `profile.<name>` | `height` / `birthdate` / `sex` / `athlete` | Required for this person's body composition if `report.include_body_metrics = yes`. One section per name in `profiles.names`. Never falls back to another profile's values. |
 | `profile.<name>` | `skip_body_metrics` | `yes` or `no`. Skip body composition for this profile instead of requiring `height`/`birthdate`/`sex` -- for when impedance readings aren't physiologically meaningful for this person. Defaults to `no`. |
+| `profile.<name>` | `weight_unit` | `kg`, `lb`, or `st`. Overrides `report.weight_unit` for this profile's reports only. Leave blank to just use `report.weight_unit`. |
 
 #### systemd service
 
@@ -273,6 +274,13 @@ Impedance-based body composition assumes a complete electrical path through both
 ```ini
 [profile.Charlie]
 skip_body_metrics = yes
+```
+
+A profile's `weight_unit` also overrides `report.weight_unit` for its own reports, so people sharing a scale don't have to agree on kg vs lb:
+
+```ini
+[profile.Bob]
+weight_unit = lb
 ```
 
 Why ntfy specifically: unlike most notification services, ntfy's `http` action type is a full HTTP request (URL, method, headers, body) fired directly when the button is tapped -- the notification service itself is the callback mechanism, no separate bot or polling process needed. Pushover only supports a single acknowledge callback tied to emergency-priority alerts, Pushbullet's actionable notifications are about mirroring your own devices rather than third-party callbacks, and Gotify has no equivalent at all. [Apprise](https://github.com/caronc/apprise) (used for [alerting](#alerting)) isn't used here either -- its unified API has no concept of actions since it targets 100+ services and most have nothing like this.
