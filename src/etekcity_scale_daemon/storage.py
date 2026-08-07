@@ -54,6 +54,28 @@ def ensure_schema(db_path: str) -> None:
         connection.close()
 
 
+def get_distinct_profiles(db_path: str) -> set[str]:
+    """Return the distinct non-null profile tags actually used in the database.
+
+    Args:
+        db_path: Filesystem path to the SQLite database file.
+
+    Returns:
+        The set of distinct profile names, empty if none are tagged yet or
+        the ``measurements`` table doesn't exist.
+    """
+    connection = sqlite3.connect(db_path)
+    try:
+        rows = connection.execute(
+            "SELECT DISTINCT profile FROM measurements WHERE profile IS NOT NULL"
+        ).fetchall()
+        return {row[0] for row in rows}
+    except sqlite3.OperationalError:
+        return set()
+    finally:
+        connection.close()
+
+
 def get_measurement_recorded_at(db_path: str, row_id: int) -> str | None:
     """Look up a measurement's recorded_at timestamp, without modifying it.
 

@@ -46,7 +46,7 @@ from .config import (
     load_report_config,
     persist_discovered_scale,
 )
-from .storage import MeasurementStore, set_measurement_profile
+from .storage import MeasurementStore, get_distinct_profiles, set_measurement_profile
 
 _LOGGER = logging.getLogger("etekcity_scale_daemon")
 
@@ -497,6 +497,7 @@ def _check_config(config_path: str) -> int:
         )
 
     biometrics_complete = 0
+    orphaned_profiles: list[str] = []
     if not errors:
         for name in profiles_config.names:
             try:
@@ -508,6 +509,9 @@ def _check_config(config_path: str) -> int:
                 profile.height_m and profile.birthdate and profile.sex
             ):
                 biometrics_complete += 1
+
+        tagged_profiles = get_distinct_profiles(daemon_config.db_path)
+        orphaned_profiles = sorted(tagged_profiles - set(profiles_config.names))
 
     if errors:
         print(f"{config_path}: INVALID")
@@ -554,6 +558,14 @@ def _check_config(config_path: str) -> int:
         f"biometrics_complete={biometrics_complete}/{len(profiles_config.names)} "
         f"path={'ntfy' if api_config.enabled else 'dunstify'}"
     )
+    if orphaned_profiles:
+        print(
+            "  warning: readings tagged with profile(s) not in profiles.names: "
+            f"{', '.join(orphaned_profiles)} (still filterable via --profile, "
+            "but there's no [profile.<name>] section for them, so biometrics/"
+            "goal progress fall back to unset -- add them back to profiles.names "
+            "or add a [profile.<name>] section if this wasn't intentional)"
+        )
     return 0
 
 
