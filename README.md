@@ -290,7 +290,7 @@ weight_unit = lb
 
 #### Goal progress
 
-Set `report.include_goal_progress = yes` plus a `goal_weight` on a profile for a "Goal Progress" section: current weight, goal weight, how much remains, and a rough projected days-to-goal estimate from the rate of change between the first and last weighed reading in the report's range.
+Set `report.include_goal_progress = yes` plus a `goal_weight` on a profile for a "Goal Progress" section: current weight, goal weight, how much remains, and a rough projected days-to-goal estimate from the rate of change across every weighed reading in the report's range (a linear regression, not just the first and last point, so one outlier reading can't single-handedly swing the estimate).
 
 ```ini
 [report]
