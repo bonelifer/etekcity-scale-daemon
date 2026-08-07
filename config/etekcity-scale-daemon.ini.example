@@ -43,6 +43,12 @@ include_impedance = yes
 # no so other models don't get a column full of dashes.
 include_heart_rate = no
 
+# Show which profile each reading was tagged with (see [profiles] below).
+# Defaults to no; mainly useful when generating a report across every
+# profile at once (--format csv or --profile omitted), since otherwise
+# there's no way to tell whose reading is whose in the output.
+include_profile = no
+
 # Unit to render the Weight column in: kg, lb, or st. Stored measurements
 # are always in kilograms; this only affects report display.
 weight_unit = kg
